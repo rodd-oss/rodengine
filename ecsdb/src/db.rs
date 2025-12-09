@@ -1,13 +1,16 @@
 use crate::component::{Component, ZeroCopyComponent};
 use crate::entity::{archetype::ArchetypeRegistry, EntityId, EntityRegistry};
 use crate::error::{EcsDbError, Result};
-use crate::schema::{parser::SchemaParser, DatabaseSchema};
+use crate::schema::{parser::SchemaParser, DatabaseSchema, types::FieldDefinition};
 use crate::storage::delta::DeltaTracker;
+use crate::storage::layout::{compute_record_layout, RecordLayout};
 use crate::storage::table::ComponentTable;
 use crate::transaction::{WriteOpWithoutResponse, WriteQueue};
 use dashmap::DashMap;
 
 use std::sync::Arc;
+
+
 
 /// Main database handle providing concurrent access to ECS data.
 pub struct Database {
@@ -85,6 +88,22 @@ pub trait TableHandle {
         free_list: Vec<usize>,
         active_count: u64,
     );
+
+    /// Returns the name of the table.
+    fn table_name(&self) -> &str;
+
+    /// Returns the field definitions for this table.
+    fn field_definitions(&self) -> &[FieldDefinition];
+
+    /// Returns the record layout for field offset calculations.
+    fn record_layout(&self) -> &RecordLayout;
+
+    /// Validate foreign key constraints for raw component data.
+    fn validate_foreign_keys(
+        &self,
+        entity_registry: &parking_lot::RwLock<EntityRegistry>,
+        data: &[u8],
+    ) -> Result<()>;
 }
 
 impl Database {
@@ -127,6 +146,19 @@ impl Database {
                         return Err(crate::error::EcsDbError::EntityNotFound(entity_id));
                     }
 
+                    // Validate foreign key constraints
+                    match tables_clone.as_ref().get(&table_id) {
+                        Some(table) => {
+                            table.validate_foreign_keys(&entity_registry_clone, &data)?;
+                        }
+                        None => {
+                            return Err(crate::error::EcsDbError::ComponentNotFound {
+                                entity_id,
+                                component_type: format!("table_id={}", table_id),
+                            })
+                        }
+                    }
+
                     match tables_clone.as_ref().get_mut(&table_id) {
                         Some(mut table) => {
                             let result = table.insert(entity_id, data);
@@ -158,6 +190,19 @@ impl Database {
                         .contains_entity(crate::entity::EntityId(entity_id))
                     {
                         return Err(crate::error::EcsDbError::EntityNotFound(entity_id));
+                    }
+
+                    // Validate foreign key constraints
+                    match tables_clone.as_ref().get(&table_id) {
+                        Some(table) => {
+                            table.validate_foreign_keys(&entity_registry_clone, &data)?;
+                        }
+                        None => {
+                            return Err(crate::error::EcsDbError::ComponentNotFound {
+                                entity_id,
+                                component_type: format!("table_id={}", table_id),
+                            })
+                        }
                     }
 
                     match tables_clone.as_ref().get_mut(&table_id) {
@@ -213,11 +258,26 @@ impl Database {
             return Ok(()); // Already registered
         }
 
+        // Look up table definition from schema
+        let table_def = self.schema
+            .find_table(T::TABLE_NAME)
+            .ok_or_else(|| EcsDbError::SchemaError(
+                format!("Table '{}' not found in schema", T::TABLE_NAME)
+            ))?;
+
+        // Compute record layout for field offset calculations
+        let record_layout = compute_record_layout(&table_def.fields, &self.schema.custom_types)?;
+
         // Create component table with initial capacity
         let table = ComponentTable::<T>::with_static_size(1024);
 
         // Wrap in type-erased handle
-        let handle = Box::new(TableHandleImpl::<T> { table });
+        let handle = Box::new(TableHandleImpl::<T> {
+            table,
+            table_name: table_def.name.clone(),
+            field_definitions: table_def.fields.clone(),
+            record_layout,
+        });
 
         self.tables.insert(table_id, handle);
         Ok(())
@@ -439,6 +499,9 @@ impl Database {
 /// Type-erased wrapper around ComponentTable<T>.
 struct TableHandleImpl<T: Component + ZeroCopyComponent> {
     table: ComponentTable<T>,
+    table_name: String,
+    field_definitions: Vec<FieldDefinition>,
+    record_layout: RecordLayout,
 }
 
 impl<T: Component + ZeroCopyComponent> TableHandle for TableHandleImpl<T> {
@@ -515,11 +578,57 @@ impl<T: Component + ZeroCopyComponent> TableHandle for TableHandleImpl<T> {
         self.table
             .restore_write_state(write_buffer, next_record_offset, free_list, active_count)
     }
+
+    fn table_name(&self) -> &str {
+        &self.table_name
+    }
+
+    fn field_definitions(&self) -> &[FieldDefinition] {
+        &self.field_definitions
+    }
+
+    fn record_layout(&self) -> &RecordLayout {
+        &self.record_layout
+    }
+
+    fn validate_foreign_keys(
+        &self,
+        entity_registry: &parking_lot::RwLock<EntityRegistry>,
+        data: &[u8],
+    ) -> Result<()> {
+        for (field_def, field_layout) in self.field_definitions.iter().zip(&self.record_layout.fields) {
+            if let Some(_fk) = &field_def.foreign_key {
+                // For now, assume foreign key references entities table and field is u64 entity ID
+                // Extract u64 from data at field offset
+                let offset = field_layout.offset;
+                if offset + 8 > data.len() {
+                    return Err(EcsDbError::SchemaError(
+                        "Data too short for foreign key field".into(),
+                    ));
+                }
+                let mut bytes = [0u8; 8];
+                bytes.copy_from_slice(&data[offset..offset + 8]);
+                let referenced_entity_id = u64::from_le_bytes(bytes);
+                // Check entity exists
+                if !entity_registry
+                    .read()
+                    .contains_entity(crate::entity::EntityId(referenced_entity_id))
+                {
+                    return Err(EcsDbError::ReferentialIntegrityViolation(format!(
+                        "Foreign key references non-existent entity {}",
+                        referenced_entity_id
+                    )));
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::schema::{TableDefinition, FieldType};
     use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Copy)]
@@ -546,11 +655,41 @@ mod tests {
 
     #[test]
     fn test_database_basic() -> Result<()> {
-        // Create in-memory database with empty schema
+        // Create in-memory database with schema containing test_component table
         let schema = DatabaseSchema {
             name: "test".to_string(),
             version: "1.0".to_string(),
-            tables: Vec::new(),
+            tables: vec![TableDefinition {
+                name: "test_component".to_string(),
+                fields: vec![
+                    FieldDefinition {
+                        name: "x".to_string(),
+                        field_type: FieldType::F32,
+                        nullable: false,
+                        indexed: false,
+                        primary_key: false,
+                        foreign_key: None,
+                    },
+                    FieldDefinition {
+                        name: "y".to_string(),
+                        field_type: FieldType::F32,
+                        nullable: false,
+                        indexed: false,
+                        primary_key: false,
+                        foreign_key: None,
+                    },
+                    FieldDefinition {
+                        name: "id".to_string(),
+                        field_type: FieldType::U32,
+                        nullable: false,
+                        indexed: false,
+                        primary_key: false,
+                        foreign_key: None,
+                    },
+                ],
+                parent_table: None,
+                description: None,
+            }],
             enums: std::collections::HashMap::new(),
             custom_types: std::collections::HashMap::new(),
         };

@@ -91,3 +91,10 @@ pub struct DatabaseSchema {
     pub enums: std::collections::HashMap<String, Vec<String>>,
     pub custom_types: std::collections::HashMap<String, Vec<FieldDefinition>>,
 }
+
+impl DatabaseSchema {
+    /// Finds a table definition by name.
+    pub fn find_table(&self, name: &str) -> Option<&TableDefinition> {
+        self.tables.iter().find(|t| t.name == name)
+    }
+}

@@ -25,7 +25,7 @@
 | 0.7 Example Schema & Test Data | ✅ | examples/simple_schema.toml, examples/basic_usage.rs |
 | 0.8 Tooling Checks | ✅ | cargo build, cargo test, cargo fmt, cargo clippy pass |
 
-## Phase 1: Core Engine (Mostly Completed)
+## Phase 1: Core Engine (Completed)
 
 | Subtask | Status | Notes |
 |---------|--------|-------|
@@ -55,12 +55,12 @@
 |---------|--------|-------|
 | 2.1 Delta Tracking System | ✅ | Implemented `DeltaOp`, `DeltaTracker`, `Delta` with serialization; integrated into commit |
 | 2.2 Atomic Commit Protocol | ✅ | Per‑table atomic swap with coordinated generation numbers; global version increments after all buffers swapped |
-| 2.3 Referential Integrity Checks | ⚠️ Partial | Basic entity existence checks and restrict on delete; foreign key schema validation implemented; field-level validation pending |
+| 2.3 Referential Integrity Checks | ✅ | Basic entity existence checks and restrict on delete; foreign key schema validation implemented; field‑level validation integrated with insert/update operations |
 | 2.4 Sparse Component Handling | ✅ Integrated | SparseSet implemented; archetype tracking integrated with component operations |
 | 2.5 Lock‑Free Write Queue (MPSC) | ✅ | Write queue module with MPSC channel and write thread; integrated into Database, replacing parking_lot::RwLock<Vec<WriteOp>> |
 | 2.6 Memory Efficient Buffering | ✅ Implemented | Free list for slot reuse; compaction implemented and integrated via `compact_if_fragmented` |
 | 2.7 Field Codec System | ✅ | `field_codec.rs` implemented (serialization + zero‑copy casting) |
-| 2.8 Enhanced Transaction Engine | ⚠️ Partial | Transaction batching via commit; timeout handling added (5s default); snapshot state for rollback implemented; rollback integration pending |
+| 2.8 Enhanced Transaction Engine | ⚠️ Partial | Transaction batching via commit; timeout handling added (5s default); snapshot state for rollback implemented; rollback integrated for single operations; batch rollback not atomic |
 | 2.9 Benchmarking Suite | ✅ | Benchmarks for inserts, reads, transactions implemented; insert latency ~24µs |
 
 ## Phase 3: Persistence (Not Started)
@@ -107,8 +107,6 @@
 
 ## Next Steps
 
-1. **Integrate foreign key field validation with operations** (schema validation implemented)
-2. **Complete rollback integration for atomic transactions** (snapshot state implemented)
-3. **Integrate with frontend** to build a usable dashboard.
-4. **Proceed to Phase 3: Persistence** (snapshots, WAL, async I/O).
-
+1. **Complete rollback integration for atomic transactions** (batch rollback not atomic)
+2. **Integrate with frontend** to build a usable dashboard.
+3. **Proceed to Phase 3: Persistence** (snapshots, WAL, async I/O).
