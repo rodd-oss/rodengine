@@ -50,6 +50,12 @@ pub enum EcsDbError {
 
     #[error("Blocking task failed: {0}")]
     BlockingTaskError(String),
+
+    #[error("Configuration error: {0}")]
+    ConfigError(String),
+
+    #[error("Compaction error: {0}")]
+    CompactionError(String),
 }
 
 impl From<JoinError> for EcsDbError {

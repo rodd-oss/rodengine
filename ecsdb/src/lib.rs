@@ -1,4 +1,5 @@
 pub mod component;
+pub mod config;
 pub mod db;
 pub mod entity;
 pub mod error;

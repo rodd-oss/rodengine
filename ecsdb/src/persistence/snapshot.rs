@@ -88,6 +88,8 @@ pub struct DatabaseSnapshot {
     pub archetype_registry: ArchetypeRegistry,
     /// Snapshots of all component tables
     pub tables: Vec<TableSnapshot>,
+    /// Database version at snapshot time (monotonically increasing)
+    pub version: u64,
 }
 
 impl DatabaseSnapshot {
@@ -210,6 +212,82 @@ impl DatabaseSnapshot {
     /// Restores the snapshot into a new Database instance.
     pub fn restore(self) -> Result<crate::db::Database> {
         crate::db::Database::from_snapshot(self)
+    }
+
+    /// Applies a single WAL operation to the snapshot (used during compaction/recovery).
+    pub fn apply_wal_op(&mut self, op: &crate::transaction::wal::WalOp) -> Result<()> {
+        match op {
+            crate::transaction::wal::WalOp::Insert { table_id, entity_id, data } => {
+                let table = self.table_mut(*table_id)
+                    .ok_or_else(|| crate::error::EcsDbError::SnapshotError(
+                        format!("Table {} not found in snapshot", table_id)
+                    ))?;
+                // Find free slot
+                let offset = if let Some(free) = table.free_slots.pop() {
+                    free
+                } else {
+                    // Append at end of buffer
+                    let offset = table.buffer_data.len();
+                    table.buffer_data.resize(offset + table.record_size, 0);
+                    offset
+                };
+                // Copy data
+                if data.len() != table.record_size {
+                    return Err(crate::error::EcsDbError::SnapshotError(
+                        format!("Data size mismatch: expected {}, got {}", table.record_size, data.len())
+                    ));
+                }
+                table.buffer_data[offset..offset + table.record_size].copy_from_slice(data);
+                table.entity_mapping.push((*entity_id, offset));
+                table.active_count += 1;
+                Ok(())
+            }
+            crate::transaction::wal::WalOp::Update { table_id, entity_id, data } => {
+                let table = self.table_mut(*table_id)
+                    .ok_or_else(|| crate::error::EcsDbError::SnapshotError(
+                        format!("Table {} not found in snapshot", table_id)
+                    ))?;
+                // Find existing mapping
+                let offset = table.entity_mapping.iter()
+                    .find(|(eid, _)| *eid == *entity_id)
+                    .map(|(_, off)| *off)
+                    .ok_or_else(|| crate::error::EcsDbError::SnapshotError(
+                        format!("Entity {} not found in table {}", entity_id, table_id)
+                    ))?;
+                // Update data
+                if data.len() != table.record_size {
+                    return Err(crate::error::EcsDbError::SnapshotError(
+                        format!("Data size mismatch: expected {}, got {}", table.record_size, data.len())
+                    ));
+                }
+                table.buffer_data[offset..offset + table.record_size].copy_from_slice(data);
+                Ok(())
+            }
+            crate::transaction::wal::WalOp::Delete { table_id, entity_id } => {
+                let table = self.table_mut(*table_id)
+                    .ok_or_else(|| crate::error::EcsDbError::SnapshotError(
+                        format!("Table {} not found in snapshot", table_id)
+                    ))?;
+                // Find mapping
+                let pos = table.entity_mapping.iter()
+                    .position(|(eid, _)| *eid == *entity_id)
+                    .ok_or_else(|| crate::error::EcsDbError::SnapshotError(
+                        format!("Entity {} not found in table {}", entity_id, table_id)
+                    ))?;
+                let (_, offset) = table.entity_mapping.remove(pos);
+                // Mark slot as free
+                table.free_slots.push(offset);
+                table.active_count -= 1;
+                Ok(())
+            }
+            // Commit and Rollback are no‑ops for snapshot application
+            crate::transaction::wal::WalOp::Commit { .. } | crate::transaction::wal::WalOp::Rollback { .. } => Ok(())
+        }
+    }
+
+    /// Returns mutable reference to table with given ID, if present.
+    fn table_mut(&mut self, table_id: u16) -> Option<&mut TableSnapshot> {
+        self.tables.iter_mut().find(|t| t.table_id == table_id)
     }
 }
 

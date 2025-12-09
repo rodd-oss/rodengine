@@ -123,6 +123,14 @@ impl Database {
         Self::from_schema(schema)
     }
 
+    /// Opens a database with persistence, recovering from snapshot and WAL.
+    /// If no snapshot exists, returns an error (use `from_schema_file` to create new).
+    pub fn open_with_persistence(config: crate::config::PersistenceConfig) -> Result<Self> {
+        use crate::persistence::manager::PersistenceManager;
+        let manager = PersistenceManager::new(config);
+        manager.recover()
+    }
+
     /// Creates a new database from an existing schema.
     pub fn from_schema(schema: DatabaseSchema) -> Result<Self> {
         let entity_registry = Arc::new(parking_lot::RwLock::new(EntityRegistry::new()));
@@ -430,6 +438,109 @@ impl Database {
         })
     }
 
+    /// Applies a write operation directly (bypassing write queue).
+    /// Used for WAL replay during recovery.
+    pub(crate) fn apply_write_op(&self, op: &WriteOpWithoutResponse) -> Result<()> {
+        match op {
+            WriteOpWithoutResponse::Insert {
+                table_id,
+                entity_id,
+                data,
+            } => {
+                let table_id = *table_id;
+                let entity_id = *entity_id;
+                let data = data.clone();
+
+                // Referential integrity: ensure entity exists
+                if !self.entity_registry.read().contains_entity(crate::entity::EntityId(entity_id)) {
+                    return Err(crate::error::EcsDbError::EntityNotFound(entity_id));
+                }
+
+                // Validate foreign key constraints
+                match self.tables.as_ref().get(&table_id) {
+                    Some(table) => {
+                        table.validate_foreign_keys(&self.entity_registry, &data)?;
+                    }
+                    None => {
+                        return Err(crate::error::EcsDbError::ComponentNotFound {
+                            entity_id,
+                            component_type: format!("table_id={}", table_id),
+                        })
+                    }
+                }
+
+                match self.tables.as_ref().get_mut(&table_id) {
+                    Some(mut table) => {
+                        let result = table.insert(entity_id, data);
+                        if result.is_ok() {
+                            self.archetype_registry.write().add_component(entity_id, table_id);
+                        }
+                        result
+                    }
+                    None => Err(crate::error::EcsDbError::ComponentNotFound {
+                        entity_id,
+                        component_type: format!("table_id={}", table_id),
+                    }),
+                }
+            }
+            WriteOpWithoutResponse::Update {
+                table_id,
+                entity_id,
+                data,
+            } => {
+                let table_id = *table_id;
+                let entity_id = *entity_id;
+                let data = data.clone();
+
+                // Referential integrity: ensure entity exists
+                if !self.entity_registry.read().contains_entity(crate::entity::EntityId(entity_id)) {
+                    return Err(crate::error::EcsDbError::EntityNotFound(entity_id));
+                }
+
+                // Validate foreign key constraints
+                match self.tables.as_ref().get(&table_id) {
+                    Some(table) => {
+                        table.validate_foreign_keys(&self.entity_registry, &data)?;
+                    }
+                    None => {
+                        return Err(crate::error::EcsDbError::ComponentNotFound {
+                            entity_id,
+                            component_type: format!("table_id={}", table_id),
+                        })
+                    }
+                }
+
+                match self.tables.as_ref().get_mut(&table_id) {
+                    Some(mut table) => table.update(entity_id, data),
+                    None => Err(crate::error::EcsDbError::ComponentNotFound {
+                        entity_id,
+                        component_type: format!("table_id={}", table_id),
+                    }),
+                }
+            }
+            WriteOpWithoutResponse::Delete {
+                table_id,
+                entity_id,
+            } => {
+                let table_id = *table_id;
+                let entity_id = *entity_id;
+                match self.tables.as_ref().get_mut(&table_id) {
+                    Some(mut table) => {
+                        let result = table.delete(entity_id);
+                        if result.is_ok() {
+                            self.archetype_registry.write().remove_component(entity_id, table_id);
+                        }
+                        result
+                    }
+                    None => Err(crate::error::EcsDbError::ComponentNotFound {
+                        entity_id,
+                        component_type: format!("table_id={}", table_id),
+                    }),
+                }
+            }
+        }
+    }
+
     /// Registers a component type with the database.
     /// Creates a table for this component type if it doesn't exist.
     pub fn register_component<T: Component + ZeroCopyComponent>(&self) -> Result<()> {
@@ -664,6 +775,11 @@ impl Database {
         self.version.load(std::sync::atomic::Ordering::Acquire)
     }
 
+    /// Sets the database version (used during recovery).
+    pub(crate) fn set_version(&self, new_version: u64) {
+        self.version.store(new_version, std::sync::atomic::Ordering::Release);
+    }
+
     /// Returns the number of component tables.
     pub fn table_count(&self) -> usize {
         self.tables.len()
@@ -715,11 +831,13 @@ impl Database {
                 active_count,
             });
         }
+        let version = self.version.load(std::sync::atomic::Ordering::SeqCst);
         Ok(DatabaseSnapshot {
             schema,
             entity_registry,
             archetype_registry,
             tables,
+            version,
         })
     }
 
@@ -747,7 +865,8 @@ impl Database {
         // Replace entity and archetype registries
         *db.entity_registry.write() = snapshot.entity_registry;
         *db.archetype_registry.write() = snapshot.archetype_registry;
-        // Reset database version? Keep at zero.
+        // Set database version to snapshot version
+        db.version.store(snapshot.version, std::sync::atomic::Ordering::SeqCst);
         Ok(db)
     }
 }
