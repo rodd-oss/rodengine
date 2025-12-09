@@ -14,6 +14,9 @@ pub enum EcsDbError {
     #[error("Schema validation failed: {0}")]
     SchemaError(String),
 
+    #[error("Referential integrity violation: {0}")]
+    ReferentialIntegrityViolation(String),
+
     #[error("Transaction error: {0}")]
     TransactionError(String),
 

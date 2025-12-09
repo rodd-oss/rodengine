@@ -1,5 +1,5 @@
-use crate::error::Result;
-use std::sync::atomic::{AtomicPtr, Ordering};
+use crate::error::{EcsDbError, Result};
+use std::sync::atomic::{AtomicPtr, AtomicU64, Ordering};
 use std::sync::Arc;
 
 pub struct StorageBuffer {
@@ -118,8 +118,16 @@ impl StorageBuffer {
 pub struct ArcStorageBuffer {
     read_buffer: Arc<AtomicPtr<Arc<Vec<u8>>>>,
     write_buffer: Vec<u8>,
-    record_count: u64,
-    record_size: usize,
+    /// Next offset to allocate when free_list is empty (in units of records)
+    next_record_offset: u64,
+    pub record_size: usize,
+    /// Generation number of the current read buffer.
+    /// Incremented each time commit_with_generation is called.
+    generation: AtomicU64,
+    /// List of free slots (offsets in bytes) that can be reused
+    free_list: Vec<usize>,
+    /// Number of active records (excluding deleted)
+    active_count: u64,
 }
 
 impl ArcStorageBuffer {
@@ -130,19 +138,128 @@ impl ArcStorageBuffer {
         Self {
             read_buffer: Arc::new(AtomicPtr::new(ptr)),
             write_buffer: vec![0u8; initial_capacity],
-            record_count: 0,
+            next_record_offset: 0,
             record_size,
+            generation: AtomicU64::new(0),
+            free_list: Vec::new(),
+            active_count: 0,
         }
     }
 
+    /// Insert a new record, reusing free slots if available.
+    pub fn insert(&mut self, record: &[u8]) -> Result<usize> {
+        if record.len() != self.record_size {
+            return Err(EcsDbError::SchemaError(format!(
+                "Record size mismatch: expected {}, got {}",
+                self.record_size,
+                record.len()
+            )));
+        }
+
+        let offset = if let Some(offset) = self.free_list.pop() {
+            // Reuse freed slot
+            offset
+        } else {
+            // Allocate new slot at the end
+            let offset = (self.next_record_offset as usize) * self.record_size;
+            self.next_record_offset += 1;
+            // Ensure capacity
+            if offset + self.record_size > self.write_buffer.len() {
+                self.grow();
+            }
+            offset
+        };
+
+        // Copy record to write buffer
+        let end = offset + self.record_size;
+        self.write_buffer[offset..end].copy_from_slice(record);
+
+        self.active_count += 1;
+
+        Ok(offset)
+    }
+
+    /// Mark a slot as free for reuse.
+    pub fn free_slot(&mut self, offset: usize) {
+        // Ensure offset is within allocated range and aligned
+        if offset.is_multiple_of(self.record_size)
+            && offset < (self.next_record_offset as usize) * self.record_size
+        {
+            self.free_list.push(offset);
+            self.active_count = self.active_count.saturating_sub(1);
+        }
+    }
+
+    /// Update a record in-place
+    pub fn update(&mut self, offset: usize, record: &[u8]) -> Result<()> {
+        if offset + record.len() > self.write_buffer.len() {
+            return Err(EcsDbError::SchemaError("Offset out of bounds".into()));
+        }
+
+        let end = offset + record.len();
+        self.write_buffer[offset..end].copy_from_slice(record);
+        Ok(())
+    }
+
+    /// Get read-only access to a record from read buffer (copies bytes)
+    pub fn read(&self, offset: usize, size: usize) -> Result<Vec<u8>> {
+        let read_arc = unsafe { &*self.read_buffer.load(Ordering::Acquire) };
+
+        if offset + size > read_arc.len() {
+            return Err(EcsDbError::SchemaError("Offset out of bounds".into()));
+        }
+
+        Ok(read_arc[offset..offset + size].to_vec())
+    }
+
+    /// Get a reference to a record in the read buffer (zero-copy)
+    pub fn read_ref(&self, offset: usize, size: usize) -> Result<&[u8]> {
+        let read_arc = unsafe { &*self.read_buffer.load(Ordering::Acquire) };
+
+        if offset + size > read_arc.len() {
+            return Err(EcsDbError::SchemaError("Offset out of bounds".into()));
+        }
+
+        Ok(&read_arc[offset..offset + size])
+    }
+
+    /// Returns a clone of the current read buffer Arc.
+    pub fn current_read_buffer(&self) -> Arc<Vec<u8>> {
+        unsafe { (&*self.read_buffer.load(Ordering::Acquire)).clone() }
+    }
+
+    /// Atomic swap: write buffer becomes new read buffer
     pub fn commit(&mut self) {
         let new_arc = Arc::new(self.write_buffer.clone());
         let new_ptr = Box::leak(Box::new(new_arc)) as *mut Arc<Vec<u8>>;
 
-        // Atomic swap
+        // Atomic swap with Release ordering
         let old_ptr = self.read_buffer.swap(new_ptr, Ordering::Release);
 
         // Safe deallocation
         let _ = unsafe { Box::from_raw(old_ptr) };
+    }
+
+    /// Commit and associate the new read buffer with a generation number.
+    /// The generation is stored after the buffer swap, ensuring that any reader
+    /// that sees the new buffer will also see the new generation.
+    pub fn commit_with_generation(&mut self, generation: u64) {
+        self.commit();
+        self.generation.store(generation, Ordering::Release);
+    }
+
+    /// Returns the generation number of the current read buffer.
+    pub fn generation(&self) -> u64 {
+        self.generation.load(Ordering::Acquire)
+    }
+
+    fn grow(&mut self) {
+        let new_capacity = self.write_buffer.len() * 2;
+        self.write_buffer.resize(new_capacity, 0);
+    }
+
+    /// Returns the number of active records stored (excluding freed slots).
+    pub fn record_count(&self) -> u64 {
+        self.active_count
     }
 }

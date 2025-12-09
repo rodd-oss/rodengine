@@ -66,7 +66,7 @@ impl EntityRegistry {
         let offset = self
             .index
             .remove(&entity_id)
-            .ok_or_else(|| EcsDbError::EntityNotFound(entity_id.0))?;
+            .ok_or(EcsDbError::EntityNotFound(entity_id.0))?;
 
         // Mark as deleted, bump version
         if let Some(record) = self.records.get_mut(offset) {
@@ -81,13 +81,23 @@ impl EntityRegistry {
         let offset = self
             .index
             .get(&entity_id)
-            .ok_or_else(|| EcsDbError::EntityNotFound(entity_id.0))?;
+            .ok_or(EcsDbError::EntityNotFound(entity_id.0))?;
 
         Ok(self.records[*offset].clone())
     }
 
+    /// Returns true if the entity exists (not deleted).
+    pub fn contains_entity(&self, entity_id: EntityId) -> bool {
+        self.index.contains_key(&entity_id)
+    }
+
     pub fn entity_count(&self) -> usize {
         self.records.len()
+    }
+
+    /// Returns a slice of all entity records (for snapshotting).
+    pub fn records(&self) -> &[EntityRecord] {
+        &self.records
     }
 }
 
