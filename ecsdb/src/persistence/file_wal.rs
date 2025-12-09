@@ -7,7 +7,6 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use async_trait::async_trait;
-use tokio::task::spawn_blocking;
 
 
 /// Magic number for WAL files: "ECSWAL\x00\x00" in ASCII
