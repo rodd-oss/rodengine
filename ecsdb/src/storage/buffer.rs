@@ -307,6 +307,32 @@ impl ArcStorageBuffer {
         old_to_new
     }
 
+    /// Returns a snapshot of the current write buffer state.
+    /// Used for transaction rollback.
+    pub fn snapshot_state(&self) -> (Vec<u8>, u64, Vec<usize>, u64) {
+        (
+            self.write_buffer.clone(),
+            self.next_record_offset,
+            self.free_list.clone(),
+            self.active_count,
+        )
+    }
+
+    /// Restores write buffer state from a snapshot.
+    /// Used for transaction rollback.
+    pub fn restore_state(
+        &mut self,
+        write_buffer: Vec<u8>,
+        next_record_offset: u64,
+        free_list: Vec<usize>,
+        active_count: u64,
+    ) {
+        self.write_buffer = write_buffer;
+        self.next_record_offset = next_record_offset;
+        self.free_list = free_list;
+        self.active_count = active_count;
+    }
+
     /// Returns the fragmentation ratio (free slots / total slots) as a value between 0.0 and 1.0.
     /// Higher values indicate more fragmentation.
     pub fn fragmentation_ratio(&self) -> f32 {

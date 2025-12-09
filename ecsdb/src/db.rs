@@ -73,6 +73,18 @@ pub trait TableHandle {
 
     /// Compacts the storage buffer, moving active records to fill gaps.
     fn compact(&mut self);
+
+    /// Returns a snapshot of the write buffer state for rollback.
+    fn snapshot_write_state(&self) -> (Vec<u8>, u64, Vec<usize>, u64);
+
+    /// Restores write buffer state from a snapshot.
+    fn restore_write_state(
+        &mut self,
+        write_buffer: Vec<u8>,
+        next_record_offset: u64,
+        free_list: Vec<usize>,
+        active_count: u64,
+    );
 }
 
 impl Database {
@@ -327,18 +339,15 @@ impl Database {
             .as_micros() as u64;
         let mut delta_tracker = DeltaTracker::new(new_version, timestamp);
 
-        // Process each operation through the write queue
-        for op in pending.drain(..) {
+        // Compute deltas before applying changes (read from current committed state)
+        for op in pending.iter() {
             match op {
                 WriteOpWithoutResponse::Insert {
                     table_id,
                     entity_id,
                     data,
                 } => {
-                    // Record insert delta
-                    delta_tracker.record_insert(table_id, entity_id, &data);
-                    // Send to write queue for application
-                    self.write_queue.insert(table_id, entity_id, data)?;
+                    delta_tracker.record_insert(*table_id, *entity_id, data);
                 }
                 WriteOpWithoutResponse::Update {
                     table_id,
@@ -346,31 +355,33 @@ impl Database {
                     data,
                 } => {
                     // Read current component before update (for delta)
-                    if let Some(table) = self.tables.get(&table_id) {
-                        let old_data = table.get(entity_id).ok();
+                    if let Some(table) = self.tables.get(table_id) {
+                        let old_data = table.get(*entity_id).ok();
                         if let Some(old) = old_data {
-                            delta_tracker.record_update(table_id, entity_id, 0, &old, &data);
+                            delta_tracker.record_update(*table_id, *entity_id, 0, &old, data);
                         } else {
-                            delta_tracker.record_insert(table_id, entity_id, &data);
+                            delta_tracker.record_insert(*table_id, *entity_id, data);
                         }
                     }
-                    self.write_queue.update(table_id, entity_id, data)?;
                 }
                 WriteOpWithoutResponse::Delete {
                     table_id,
                     entity_id,
                 } => {
                     // Read current component before delete (for delta)
-                    if let Some(table) = self.tables.get(&table_id) {
-                        let old_data = table.get(entity_id).ok();
+                    if let Some(table) = self.tables.get(table_id) {
+                        let old_data = table.get(*entity_id).ok();
                         if let Some(old) = old_data {
-                            delta_tracker.record_delete(table_id, entity_id, &old);
+                            delta_tracker.record_delete(*table_id, *entity_id, &old);
                         }
                     }
-                    self.write_queue.delete(table_id, entity_id)?;
                 }
             }
         }
+
+        // Send batch atomically via write queue
+        let batch = pending.drain(..).collect();
+        self.write_queue.commit_batch(batch)?;
 
         // Commit all tables with the new generation number (after all operations applied)
         for mut table in self.tables.iter_mut() {
@@ -488,6 +499,21 @@ impl<T: Component + ZeroCopyComponent> TableHandle for TableHandleImpl<T> {
 
     fn compact(&mut self) {
         self.table.compact()
+    }
+
+    fn snapshot_write_state(&self) -> (Vec<u8>, u64, Vec<usize>, u64) {
+        self.table.snapshot_write_state()
+    }
+
+    fn restore_write_state(
+        &mut self,
+        write_buffer: Vec<u8>,
+        next_record_offset: u64,
+        free_list: Vec<usize>,
+        active_count: u64,
+    ) {
+        self.table
+            .restore_write_state(write_buffer, next_record_offset, free_list, active_count)
     }
 }
 

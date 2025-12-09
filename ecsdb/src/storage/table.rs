@@ -173,6 +173,26 @@ impl<T: Component> ComponentTable<T> {
     pub fn is_fragmented(&self, threshold: f32) -> bool {
         self.buffer.is_fragmented(threshold)
     }
+
+    /// Returns a snapshot of the write buffer state for rollback.
+    pub fn snapshot_write_state(&self) -> (Vec<u8>, u64, Vec<usize>, u64) {
+        self.buffer.snapshot_state()
+    }
+
+    /// Restores write buffer state from a snapshot.
+    pub fn restore_write_state(
+        &mut self,
+        write_buffer: Vec<u8>,
+        next_record_offset: u64,
+        free_list: Vec<usize>,
+        active_count: u64,
+    ) {
+        self.buffer
+            .restore_state(write_buffer, next_record_offset, free_list, active_count);
+        // After restore, entity index may be invalid because offsets changed.
+        // Since rollback restores exact state, offsets should match existing entity index.
+        // We assume no compaction occurred during the batch.
+    }
 }
 
 // Implement ZeroCopyComponent for simple primitives as example.
