@@ -17,6 +17,7 @@ parking_lot = "0.12"
 uuid = { version = "1", features = ["v4"] }
 zstd = "0.13"
 bytes = "1"
+crc32fast = "1"
 
 [workspace.package]
 version = "0.1.0"

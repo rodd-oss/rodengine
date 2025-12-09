@@ -381,7 +381,7 @@ impl Database {
 
         // Send batch atomically via write queue
         let batch = pending.drain(..).collect();
-        self.write_queue.commit_batch(batch)?;
+        self.write_queue.commit_batch(new_version, batch)?;
 
         // Commit all tables with the new generation number (after all operations applied)
         for mut table in self.tables.iter_mut() {

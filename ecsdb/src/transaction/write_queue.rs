@@ -1,4 +1,5 @@
 use crate::error::{EcsDbError, Result};
+use crate::transaction::wal::{WalLogger, WalOp};
 use std::sync::mpsc::{self, RecvTimeoutError, Sender};
 use std::thread;
 use std::time::Duration;
@@ -27,6 +28,7 @@ pub enum WriteOp {
         response: Sender<Result<()>>,
     },
     CommitBatch {
+        transaction_id: u64,
         operations: Vec<WriteOpWithoutResponse>,
         response: Sender<Result<u64>>, // returns new version
     },
@@ -73,6 +75,7 @@ impl WriteQueue {
 
         let thread = thread::spawn(move || {
             let rx = rx;
+            let mut wal = WalLogger::new();
             while let Ok(op) = rx.recv() {
                 match op {
                     WriteOp::Insert {
@@ -81,11 +84,25 @@ impl WriteQueue {
                         data,
                         response,
                     } => {
+                        let txn_id = wal.begin_transaction();
+                        if let Err(e) = wal.log_operation(txn_id, 0, WalOp::Insert {
+                            table_id,
+                            entity_id,
+                            data: data.clone(),
+                        }) {
+                            let _ = response.send(Err(e));
+                            continue;
+                        }
                         let result = process(&WriteOpWithoutResponse::Insert {
                             table_id,
                             entity_id,
                             data,
                         });
+                        if result.is_ok() {
+                            let _ = wal.log_commit(txn_id);
+                        } else {
+                            let _ = wal.log_rollback(txn_id);
+                        }
                         let _ = response.send(result);
                     }
                     WriteOp::Update {
@@ -94,11 +111,25 @@ impl WriteQueue {
                         data,
                         response,
                     } => {
+                        let txn_id = wal.begin_transaction();
+                        if let Err(e) = wal.log_operation(txn_id, 0, WalOp::Update {
+                            table_id,
+                            entity_id,
+                            data: data.clone(),
+                        }) {
+                            let _ = response.send(Err(e));
+                            continue;
+                        }
                         let result = process(&WriteOpWithoutResponse::Update {
                             table_id,
                             entity_id,
                             data,
                         });
+                        if result.is_ok() {
+                            let _ = wal.log_commit(txn_id);
+                        } else {
+                            let _ = wal.log_rollback(txn_id);
+                        }
                         let _ = response.send(result);
                     }
                     WriteOp::Delete {
@@ -106,29 +137,75 @@ impl WriteQueue {
                         entity_id,
                         response,
                     } => {
+                        let txn_id = wal.begin_transaction();
+                        if let Err(e) = wal.log_operation(txn_id, 0, WalOp::Delete {
+                            table_id,
+                            entity_id,
+                        }) {
+                            let _ = response.send(Err(e));
+                            continue;
+                        }
                         let result = process(&WriteOpWithoutResponse::Delete {
                             table_id,
                             entity_id,
                         });
+                        if result.is_ok() {
+                            let _ = wal.log_commit(txn_id);
+                        } else {
+                            let _ = wal.log_rollback(txn_id);
+                        }
                         let _ = response.send(result);
                     }
                     WriteOp::CommitBatch {
+                        transaction_id,
                         operations,
                         response,
                     } => {
-                        let version = 0; // placeholder
                         let mut all_ok = true;
-                        for op in operations {
-                            if let Err(e) = process(&op) {
-                                // TODO: rollback?
+                        for (seq, op) in operations.into_iter().enumerate() {
+                            // Log operation to WAL
+                            let wal_op = match &op {
+                                WriteOpWithoutResponse::Insert { table_id, entity_id, data } => {
+                                    WalOp::Insert {
+                                        table_id: *table_id,
+                                        entity_id: *entity_id,
+                                        data: data.clone(),
+                                    }
+                                }
+                                WriteOpWithoutResponse::Update { table_id, entity_id, data } => {
+                                    WalOp::Update {
+                                        table_id: *table_id,
+                                        entity_id: *entity_id,
+                                        data: data.clone(),
+                                    }
+                                }
+                                WriteOpWithoutResponse::Delete { table_id, entity_id } => {
+                                    WalOp::Delete {
+                                        table_id: *table_id,
+                                        entity_id: *entity_id,
+                                    }
+                                }
+                            };
+                            if let Err(e) = wal.log_operation(transaction_id, seq as u32, wal_op) {
                                 all_ok = false;
+                                let _ = response.send(Err(e));
+                                break;
+                            }
+                            if let Err(e) = process(&op) {
+                                all_ok = false;
+                                // Log rollback for the transaction
+                                let _ = wal.log_rollback(transaction_id);
                                 let _ = response.send(Err(e));
                                 break;
                             }
                         }
                         if all_ok {
-                            // TODO: actual commit that bumps version
-                            let _ = response.send(Ok(version));
+                            // Log commit marker
+                            if let Err(e) = wal.log_commit(transaction_id) {
+                                let _ = response.send(Err(e));
+                            } else {
+                                let _ = response.send(Ok(transaction_id));
+                            }
                         }
                     }
                     WriteOp::Shutdown => break,
@@ -197,9 +274,10 @@ impl WriteQueue {
 
     /// Sends a batch of operations to be applied atomically.
     /// Returns the new database version after the commit.
-    pub fn commit_batch(&self, operations: Vec<WriteOpWithoutResponse>) -> Result<u64> {
+    pub fn commit_batch(&self, transaction_id: u64, operations: Vec<WriteOpWithoutResponse>) -> Result<u64> {
         let (tx, rx) = mpsc::channel();
         let op = WriteOp::CommitBatch {
+            transaction_id,
             operations,
             response: tx,
         };

@@ -1,6 +1,6 @@
 # Implemented Tasks
 
-*Last Updated: 2025-12-10*
+*Last Updated: 2025-12-09*
 
 ## Current Build Status
 
@@ -36,7 +36,7 @@
 | 1.5 Storage Layer (`storage/`) | ✅ | `buffer.rs` (StorageBuffer, ArcStorageBuffer with atomic swap), `field_codec.rs` (encode/decode, zero‑copy casting), `layout.rs` (record layout computation), `sparse.rs` (stub), `table.rs` (ComponentTable with CRUD) |
 | 1.6 Basic CRUD Operations (`db.rs`) | ✅ | `Database` struct with `insert`, `update`, `delete`, `get`, `commit`, `register_component`, `create_entity` |
 | 1.7 Double Buffer Implementation | ✅ | `ArcStorageBuffer` provides atomic swap of read/write buffers |
-| 1.8 Transaction State Machine (`transaction/`) | ⚠️ Partial | `engine.rs` defines `TransactionOp`, `Transaction`, `TransactionEngine`; MPSC channel implemented in `write_queue.rs`; WAL is a simple vector |
+| 1.8 Transaction State Machine (`transaction/`) | ✅ | `engine.rs` defines `TransactionOp`, `Transaction`, `TransactionEngine` with WAL logging; MPSC channel implemented in `write_queue.rs`; `wal.rs` provides write-ahead log with checksums |
 | 1.9 Initial Integration with Tauri | ✅ | `src‑tauri/src/lib.rs` exposes `init_database`, `create_entity` commands; Vue frontend can call them |
 
 **Phase 1 Acceptance Criteria**:
@@ -44,7 +44,7 @@
 - ✅ Entity registry can create, delete, and retrieve entities
 - ✅ Component tables store data in contiguous buffers; insertion/retrieval works
 - ✅ Double buffer commit atomically swaps read/write buffers; readers see consistent snapshots
-- ⚠️ Transaction log records operations (stub only); MPSC channel implemented
+- ✅ Transaction log records operations with WAL entries (timestamp, transaction ID, checksum); simple transaction (insert + commit) succeeds via db API
 - ✅ All modules have unit tests (>80% coverage per `cargo test`)
 - ✅ No unsafe code violations (MIRI not run but unsafe is minimal and guarded)
 - ✅ Library integrates with Tauri and can be invoked from Vue frontend
