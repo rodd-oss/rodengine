@@ -5,7 +5,7 @@
 ## Current Build Status
 
 - ✅ **Workspace builds**: `cargo build --workspace` succeeds
-- ✅ **Database crate tests**: `cargo test -p ecsdb` passes (7 unit tests, 2 integration tests)
+- ✅ **Database crate tests**: `cargo test -p ecsdb` passes (19 unit tests, 2 integration tests)
 - ✅ **Linting**: `cargo clippy -p ecsdb -- -D warnings` passes (after fixes)
 - ✅ **Formatting**: `cargo fmt --check -p ecsdb` passes
 - ✅ **Frontend build**: `bun run build` succeeds (Vue + Vite)
@@ -69,7 +69,7 @@
 |---------|--------|-------|
 | 3.1 Snapshot Creation & Restoration | ✅ | Implemented `DatabaseSnapshot`, `write_to_file`, `from_file`, `restore`. Supports compression and checksums. |
 | 3.2 WAL Archival and Replay | ✅ | Implemented `FileWal` with rotation, header validation, replay, and async trait integration. |
-| 3.3 Async I/O Integration (Tokio) | ❌ | Not started |
+| 3.3 Async I/O Integration (Tokio) | ✅ | Async WAL trait, async snapshot read/write, Tokio blocking tasks for compression. |
 | 3.4 Compaction Worker | ❌ | Not started |
 | 3.5 Crash Recovery | ❌ | Not started |
 | 3.6 Configuration System | ❌ | Not started |
@@ -130,5 +130,5 @@ A comprehensive test backlog has been created in [tests_backlog.md](./tests_back
 ## Next Steps
 
 1. **Integrate with frontend** to build a usable dashboard.
-2. **Proceed to Phase 3: Persistence** (snapshots, WAL, async I/O).
+2. **Complete Phase 3: Persistence** (compaction worker, crash recovery, configuration system, database integration, end‑to‑end durability tests).
 3. **Implement missing tests** from the backlog to increase coverage.
