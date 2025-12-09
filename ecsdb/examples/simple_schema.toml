@@ -1,0 +1,48 @@
+[database]
+name = "game_db"
+version = "1.0.0"
+
+[tables.entities]
+[[tables.entities.fields]]
+name = "id"
+type = "u64"
+primary_key = true
+
+[[tables.entities.fields]]
+name = "version"
+type = "u32"
+nullable = true
+
+[tables.transform]
+parent_table = "entities"
+[[tables.transform.fields]]
+name = "entity_id"
+type = "u64"
+foreign_key = "entities.id"
+
+[[tables.transform.fields]]
+name = "position_x"
+type = "f32"
+
+[[tables.transform.fields]]
+name = "position_y"
+type = "f32"
+
+[[tables.transform.fields]]
+name = "position_z"
+type = "f32"
+
+[tables.health]
+parent_table = "entities"
+[[tables.health.fields]]
+name = "entity_id"
+type = "u64"
+foreign_key = "entities.id"
+
+[[tables.health.fields]]
+name = "hp"
+type = "u32"
+
+[[tables.health.fields]]
+name = "max_hp"
+type = "u32"

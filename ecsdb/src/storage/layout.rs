@@ -1,0 +1,1 @@
+// Memory layout calculation (placeholder)

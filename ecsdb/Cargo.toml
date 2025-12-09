@@ -1,0 +1,39 @@
+[package]
+name = "ecsdb"
+version = "0.1.0"
+edition = "2021"
+authors = ["you"]
+license = "MIT OR Apache-2.0"
+description = "ECS Relational Database Engine"
+
+[dependencies]
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+bincode = { workspace = true }
+thiserror = { workspace = true }
+dashmap = { workspace = true }
+parking_lot = { workspace = true }
+uuid = { workspace = true }
+zstd = { workspace = true }
+bytes = { workspace = true }
+
+[dev-dependencies]
+criterion = "0.5"
+proptest = "1"
+tokio-test = "0.4"
+insta = "1"
+pretty_assertions = "1"
+
+[[bench]]
+name = "inserts"
+harness = false
+
+[[bench]]
+name = "reads"
+harness = false
+
+[[bench]]
+name = "transactions"
+harness = false

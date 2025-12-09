@@ -1,0 +1,1 @@
+// Sparse component storage (placeholder)
