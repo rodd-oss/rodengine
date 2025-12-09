@@ -1,6 +1,6 @@
 # Implemented Tasks
 
-*Last Updated: 2025-12-10*
+*Last Updated: 2025-12-09*
 
 ## Current Build Status
 
@@ -55,12 +55,12 @@
 |---------|--------|-------|
 | 2.1 Delta Tracking System | ✅ | Implemented `DeltaOp`, `DeltaTracker`, `Delta` with serialization; integrated into commit |
 | 2.2 Atomic Commit Protocol | ✅ | Per‑table atomic swap with coordinated generation numbers; global version increments after all buffers swapped |
-| 2.3 Referential Integrity Checks | ✅ | Basic entity existence checks and restrict on delete; foreign key field validation pending |
+| 2.3 Referential Integrity Checks | ⚠️ Partial | Basic entity existence checks and restrict on delete; foreign key field validation pending |
 | 2.4 Sparse Component Handling | ✅ Integrated | SparseSet implemented; archetype tracking integrated with component operations |
 | 2.5 Lock‑Free Write Queue (MPSC) | ✅ | Write queue module with MPSC channel and write thread; integrated into Database, replacing parking_lot::RwLock<Vec<WriteOp>> |
-| 2.6 Memory Efficient Buffering | ✅ Implemented | Free list for slot reuse; compaction implemented |
+| 2.6 Memory Efficient Buffering | ✅ Implemented | Free list for slot reuse; compaction implemented and integrated via `compact_if_fragmented` |
 | 2.7 Field Codec System | ✅ | `field_codec.rs` implemented (serialization + zero‑copy casting) |
-| 2.8 Enhanced Transaction Engine | ⚠️ Partial | Transaction batching via commit; rollback and timeout handling pending |
+| 2.8 Enhanced Transaction Engine | ⚠️ Partial | Transaction batching via commit; timeout handling added (5s default); rollback pending |
 | 2.9 Benchmarking Suite | ✅ | Benchmarks for inserts, reads, transactions implemented; insert latency ~24µs |
 
 ## Phase 3: Persistence (Not Started)
@@ -107,8 +107,8 @@
 
 ## Next Steps
 
-1. **Add foreign key field validation** (basic entity existence checks done)
-2. **Implement compaction for memory efficiency** (free list added, compaction pending)
-3. **Enhance transaction engine** with rollback and timeout handling.
-4. **Integrate with frontend** to build a usable dashboard.
+1. **Add foreign key field validation** (basic entity existence checks done; foreign key field validation pending)
+2. **Implement rollback support for atomic transactions** (timeout handling added)
+3. **Integrate with frontend** to build a usable dashboard.
+4. **Proceed to Phase 3: Persistence** (snapshots, WAL, async I/O).
 

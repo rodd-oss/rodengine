@@ -1,6 +1,10 @@
 use crate::error::{EcsDbError, Result};
-use std::sync::mpsc::{self, Sender};
+use std::sync::mpsc::{self, RecvTimeoutError, Sender};
 use std::thread;
+use std::time::Duration;
+
+/// Default timeout for write operations (5 seconds)
+const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Operation that can be sent to the write thread.
 #[derive(Debug)]
@@ -53,6 +57,8 @@ pub struct WriteQueue {
     tx: Sender<WriteOp>,
     // We hold the join handle to ensure the thread lives as long as the queue.
     _thread: thread::JoinHandle<()>,
+    /// Timeout for waiting for write thread responses
+    timeout: Duration,
 }
 
 impl WriteQueue {
@@ -133,7 +139,13 @@ impl WriteQueue {
         Self {
             tx,
             _thread: thread,
+            timeout: DEFAULT_TIMEOUT,
         }
+    }
+
+    /// Sets the timeout for waiting for write thread responses.
+    pub fn set_timeout(&mut self, timeout: Duration) {
+        self.timeout = timeout;
     }
 
     /// Sends an insert operation and waits for the response.
@@ -146,7 +158,10 @@ impl WriteQueue {
             response: tx,
         };
         self.tx.send(op).map_err(|_| EcsDbError::ChannelClosed)?;
-        rx.recv().map_err(|_| EcsDbError::ChannelClosed)?
+        rx.recv_timeout(self.timeout).map_err(|e| match e {
+            RecvTimeoutError::Timeout => EcsDbError::Timeout,
+            RecvTimeoutError::Disconnected => EcsDbError::ChannelClosed,
+        })?
     }
 
     /// Sends an update operation and waits for the response.
@@ -159,7 +174,10 @@ impl WriteQueue {
             response: tx,
         };
         self.tx.send(op).map_err(|_| EcsDbError::ChannelClosed)?;
-        rx.recv().map_err(|_| EcsDbError::ChannelClosed)?
+        rx.recv_timeout(self.timeout).map_err(|e| match e {
+            RecvTimeoutError::Timeout => EcsDbError::Timeout,
+            RecvTimeoutError::Disconnected => EcsDbError::ChannelClosed,
+        })?
     }
 
     /// Sends a delete operation and waits for the response.
@@ -171,7 +189,10 @@ impl WriteQueue {
             response: tx,
         };
         self.tx.send(op).map_err(|_| EcsDbError::ChannelClosed)?;
-        rx.recv().map_err(|_| EcsDbError::ChannelClosed)?
+        rx.recv_timeout(self.timeout).map_err(|e| match e {
+            RecvTimeoutError::Timeout => EcsDbError::Timeout,
+            RecvTimeoutError::Disconnected => EcsDbError::ChannelClosed,
+        })?
     }
 
     /// Sends a batch of operations to be applied atomically.
@@ -183,7 +204,10 @@ impl WriteQueue {
             response: tx,
         };
         self.tx.send(op).map_err(|_| EcsDbError::ChannelClosed)?;
-        rx.recv().map_err(|_| EcsDbError::ChannelClosed)?
+        rx.recv_timeout(self.timeout).map_err(|e| match e {
+            RecvTimeoutError::Timeout => EcsDbError::Timeout,
+            RecvTimeoutError::Disconnected => EcsDbError::ChannelClosed,
+        })?
     }
 
     /// Shuts down the write thread (waits for it to finish).

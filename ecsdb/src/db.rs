@@ -64,6 +64,15 @@ pub trait TableHandle {
 
     /// Returns true if the entity has a component in this table.
     fn contains_entity(&self, entity_id: u64) -> bool;
+
+    /// Returns the fragmentation ratio (free slots / total slots) as a value between 0.0 and 1.0.
+    fn fragmentation_ratio(&self) -> f32;
+
+    /// Returns true if fragmentation exceeds the given threshold.
+    fn is_fragmented(&self, threshold: f32) -> bool;
+
+    /// Compacts the storage buffer, moving active records to fill gaps.
+    fn compact(&mut self);
 }
 
 impl Database {
@@ -387,6 +396,19 @@ impl Database {
         Ok(new_version)
     }
 
+    /// Compacts tables where fragmentation exceeds the given threshold (0.0 to 1.0).
+    /// Returns the number of tables compacted.
+    pub fn compact_if_fragmented(&self, threshold: f32) -> usize {
+        let mut compacted = 0;
+        for mut table in self.tables.iter_mut() {
+            if table.is_fragmented(threshold) {
+                table.compact();
+                compacted += 1;
+            }
+        }
+        compacted
+    }
+
     /// Returns the current database version.
     pub fn version(&self) -> u64 {
         self.version.load(std::sync::atomic::Ordering::Acquire)
@@ -454,6 +476,18 @@ impl<T: Component + ZeroCopyComponent> TableHandle for TableHandleImpl<T> {
 
     fn contains_entity(&self, entity_id: u64) -> bool {
         self.table.contains_entity(entity_id)
+    }
+
+    fn fragmentation_ratio(&self) -> f32 {
+        self.table.fragmentation_ratio()
+    }
+
+    fn is_fragmented(&self, threshold: f32) -> bool {
+        self.table.is_fragmented(threshold)
+    }
+
+    fn compact(&mut self) {
+        self.table.compact()
     }
 }
 

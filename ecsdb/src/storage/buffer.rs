@@ -306,4 +306,20 @@ impl ArcStorageBuffer {
         // For now, keep capacity.
         old_to_new
     }
+
+    /// Returns the fragmentation ratio (free slots / total slots) as a value between 0.0 and 1.0.
+    /// Higher values indicate more fragmentation.
+    pub fn fragmentation_ratio(&self) -> f32 {
+        let total_slots = self.next_record_offset as usize;
+        if total_slots == 0 {
+            0.0
+        } else {
+            self.free_list.len() as f32 / total_slots as f32
+        }
+    }
+
+    /// Returns true if fragmentation exceeds the given threshold (0.0 to 1.0).
+    pub fn is_fragmented(&self, threshold: f32) -> bool {
+        self.fragmentation_ratio() >= threshold
+    }
 }

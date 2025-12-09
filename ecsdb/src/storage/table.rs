@@ -163,6 +163,16 @@ impl<T: Component> ComponentTable<T> {
             }
         }
     }
+
+    /// Returns the fragmentation ratio (free slots / total slots) as a value between 0.0 and 1.0.
+    pub fn fragmentation_ratio(&self) -> f32 {
+        self.buffer.fragmentation_ratio()
+    }
+
+    /// Returns true if fragmentation exceeds the given threshold (0.0 to 1.0).
+    pub fn is_fragmented(&self, threshold: f32) -> bool {
+        self.buffer.is_fragmented(threshold)
+    }
 }
 
 // Implement ZeroCopyComponent for simple primitives as example.
