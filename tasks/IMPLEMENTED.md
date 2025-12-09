@@ -68,7 +68,7 @@
 | Subtask | Status | Notes |
 |---------|--------|-------|
 | 3.1 Snapshot Creation & Restoration | ✅ | Implemented `DatabaseSnapshot`, `write_to_file`, `from_file`, `restore`. Supports compression and checksums. |
-| 3.2 WAL Archival and Replay | ❌ | Not started |
+| 3.2 WAL Archival and Replay | ✅ | Implemented `FileWal` with rotation, header validation, replay, and async trait integration. |
 | 3.3 Async I/O Integration (Tokio) | ❌ | Not started |
 | 3.4 Compaction Worker | ❌ | Not started |
 | 3.5 Crash Recovery | ❌ | Not started |
@@ -105,7 +105,30 @@
 | 5.9 Release Packaging | ❌ | Not started |
 | 5.10 Polish & Bug Fixes | ❌ | Not started |
 
+## Test Coverage Progress
+
+A comprehensive test backlog has been created in [tests_backlog.md](./tests_backlog.md) detailing missing unit, integration, property-based, and performance tests for each module.
+
+### Current Test Status (2025-12-09)
+- **Modules with unit tests**: 9 out of 20 (45%)
+- **Integration tests**: 2 basic tests exist
+- **Benchmarks**: 3 criterion benchmarks for inserts, reads, transactions
+- **Property-based tests**: 0 (proptest configured but not used)
+
+### Key Test Gaps
+1. **Storage buffer** (`ArcStorageBuffer`) – core double‑buffer logic untested
+2. **Delta tracking** – serialization and before‑images
+3. **Schema validator** – foreign‑key and uniqueness checks
+4. **Write queue** – concurrency and atomic batch commits
+5. **Snapshot persistence** – file I/O and compression
+
+### Immediate Priorities
+1. Write unit tests for `storage/buffer.rs` and `storage/delta.rs`
+2. Add integration tests for foreign‑key constraints
+3. Verify snapshot round‑trip with real database
+
 ## Next Steps
 
 1. **Integrate with frontend** to build a usable dashboard.
 2. **Proceed to Phase 3: Persistence** (snapshots, WAL, async I/O).
+3. **Implement missing tests** from the backlog to increase coverage.
