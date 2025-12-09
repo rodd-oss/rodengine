@@ -1,4 +1,5 @@
 use crate::error::{EcsDbError, Result};
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicPtr, AtomicU64, Ordering};
 use std::sync::Arc;
 
@@ -261,5 +262,48 @@ impl ArcStorageBuffer {
     /// Returns the number of active records stored (excluding freed slots).
     pub fn record_count(&self) -> u64 {
         self.active_count
+    }
+
+    /// Compacts the write buffer by moving active records to fill gaps.
+    /// Returns a mapping from old byte offsets to new byte offsets.
+    /// After compaction, free_list is cleared and next_record_offset is updated.
+    pub fn compact(&mut self) -> HashMap<usize, usize> {
+        let record_size = self.record_size;
+        let total_slots = self.next_record_offset as usize;
+        // Build set of free slots (in slot indices)
+        let free_set: HashSet<usize> = self
+            .free_list
+            .iter()
+            .map(|&offset| offset / record_size)
+            .collect();
+        let mut old_to_new = HashMap::new();
+        let mut new_slot = 0;
+        for old_slot in 0..total_slots {
+            if free_set.contains(&old_slot) {
+                continue;
+            }
+            let old_offset = old_slot * record_size;
+            let new_offset = new_slot * record_size;
+            if old_offset != new_offset {
+                // Ensure destination range is within buffer capacity
+                let dst_end = new_offset + record_size;
+                if dst_end > self.write_buffer.len() {
+                    self.write_buffer.resize(dst_end, 0);
+                }
+                // Copy record
+                let src_start = old_offset;
+                let src_end = src_start + record_size;
+                self.write_buffer
+                    .copy_within(src_start..src_end, new_offset);
+            }
+            old_to_new.insert(old_offset, new_offset);
+            new_slot += 1;
+        }
+        // Update state
+        self.next_record_offset = new_slot as u64;
+        self.free_list.clear();
+        // Shrink buffer if it's much larger than needed (optional)
+        // For now, keep capacity.
+        old_to_new
     }
 }

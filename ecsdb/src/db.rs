@@ -1,5 +1,5 @@
 use crate::component::{Component, ZeroCopyComponent};
-use crate::entity::{EntityId, EntityRegistry};
+use crate::entity::{archetype::ArchetypeRegistry, EntityId, EntityRegistry};
 use crate::error::{EcsDbError, Result};
 use crate::schema::{parser::SchemaParser, DatabaseSchema};
 use crate::storage::delta::DeltaTracker;
@@ -16,6 +16,9 @@ pub struct Database {
 
     /// Entity registry (protected by mutex for now)
     entity_registry: Arc<parking_lot::RwLock<EntityRegistry>>,
+
+    /// Archetype registry (protected by mutex)
+    archetype_registry: Arc<parking_lot::RwLock<ArchetypeRegistry>>,
 
     /// Component tables indexed by table ID
     tables: Arc<DashMap<u16, Box<dyn TableHandle + Send + Sync>>>,
@@ -73,12 +76,14 @@ impl Database {
     /// Creates a new database from an existing schema.
     pub fn from_schema(schema: DatabaseSchema) -> Result<Self> {
         let entity_registry = Arc::new(parking_lot::RwLock::new(EntityRegistry::new()));
+        let archetype_registry = Arc::new(parking_lot::RwLock::new(ArchetypeRegistry::new()));
         let tables: Arc<DashMap<u16, Box<dyn TableHandle + Send + Sync>>> =
             Arc::new(DashMap::new());
 
         // Clone Arcs for capture in closure
         let tables_clone = tables.clone();
         let entity_registry_clone = entity_registry.clone();
+        let archetype_registry_clone = archetype_registry.clone();
 
         // Create write queue with processing closure
         let write_queue = WriteQueue::spawn(move |op| {
@@ -102,7 +107,15 @@ impl Database {
                     }
 
                     match tables_clone.as_ref().get_mut(&table_id) {
-                        Some(mut table) => table.insert(entity_id, data),
+                        Some(mut table) => {
+                            let result = table.insert(entity_id, data);
+                            if result.is_ok() {
+                                archetype_registry_clone
+                                    .write()
+                                    .add_component(entity_id, table_id);
+                            }
+                            result
+                        }
                         None => Err(crate::error::EcsDbError::ComponentNotFound {
                             entity_id,
                             component_type: format!("table_id={}", table_id),
@@ -141,7 +154,15 @@ impl Database {
                     let table_id = *table_id;
                     let entity_id = *entity_id;
                     match tables_clone.as_ref().get_mut(&table_id) {
-                        Some(mut table) => table.delete(entity_id),
+                        Some(mut table) => {
+                            let result = table.delete(entity_id);
+                            if result.is_ok() {
+                                archetype_registry_clone
+                                    .write()
+                                    .remove_component(entity_id, table_id);
+                            }
+                            result
+                        }
                         None => Err(crate::error::EcsDbError::ComponentNotFound {
                             entity_id,
                             component_type: format!("table_id={}", table_id),
@@ -154,6 +175,7 @@ impl Database {
         Ok(Self {
             schema: Arc::new(schema),
             entity_registry,
+            archetype_registry,
             tables,
             write_queue,
             pending_ops: parking_lot::RwLock::new(Vec::new()),
@@ -183,8 +205,13 @@ impl Database {
     /// Creates a new entity and returns its ID.
     pub fn create_entity(&self) -> Result<EntityId> {
         let mut registry = self.entity_registry.write();
-        // For now, archetype hash is 0 (no components)
-        registry.create_entity(0)
+        let entity_id = registry.create_entity(0)?;
+        let mut archetype_reg = self.archetype_registry.write();
+        archetype_reg.add_entity(
+            entity_id.0,
+            crate::entity::archetype::ArchetypeMask::empty(),
+        );
+        Ok(entity_id)
     }
 
     /// Deletes an entity, enforcing referential integrity.
@@ -199,6 +226,9 @@ impl Database {
             }
         }
 
+        // Remove entity from archetype registry
+        let mut archetype_reg = self.archetype_registry.write();
+        archetype_reg.remove_entity(entity_id);
         // Delete entity from registry
         let mut registry = self.entity_registry.write();
         registry.delete_entity(crate::entity::EntityId(entity_id))

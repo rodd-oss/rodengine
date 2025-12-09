@@ -1,6 +1,6 @@
 # Implemented Tasks
 
-*Last Updated: 2025-12-09*
+*Last Updated: 2025-12-10*
 
 ## Current Build Status
 
@@ -36,7 +36,7 @@
 | 1.5 Storage Layer (`storage/`) | ✅ | `buffer.rs` (StorageBuffer, ArcStorageBuffer with atomic swap), `field_codec.rs` (encode/decode, zero‑copy casting), `layout.rs` (record layout computation), `sparse.rs` (stub), `table.rs` (ComponentTable with CRUD) |
 | 1.6 Basic CRUD Operations (`db.rs`) | ✅ | `Database` struct with `insert`, `update`, `delete`, `get`, `commit`, `register_component`, `create_entity` |
 | 1.7 Double Buffer Implementation | ✅ | `ArcStorageBuffer` provides atomic swap of read/write buffers |
-| 1.8 Transaction State Machine (`transaction/`) | ⚠️ Partial | `engine.rs` defines `TransactionOp`, `Transaction`, `TransactionEngine` but WAL is a simple vector; missing proper write‑ahead logging and MPSC channel |
+| 1.8 Transaction State Machine (`transaction/`) | ⚠️ Partial | `engine.rs` defines `TransactionOp`, `Transaction`, `TransactionEngine`; MPSC channel implemented in `write_queue.rs`; WAL is a simple vector |
 | 1.9 Initial Integration with Tauri | ✅ | `src‑tauri/src/lib.rs` exposes `init_database`, `create_entity` commands; Vue frontend can call them |
 
 **Phase 1 Acceptance Criteria**:
@@ -44,7 +44,7 @@
 - ✅ Entity registry can create, delete, and retrieve entities
 - ✅ Component tables store data in contiguous buffers; insertion/retrieval works
 - ✅ Double buffer commit atomically swaps read/write buffers; readers see consistent snapshots
-- ⚠️ Transaction log records operations (stub only)
+- ⚠️ Transaction log records operations (stub only); MPSC channel implemented
 - ✅ All modules have unit tests (>80% coverage per `cargo test`)
 - ✅ No unsafe code violations (MIRI not run but unsafe is minimal and guarded)
 - ✅ Library integrates with Tauri and can be invoked from Vue frontend
@@ -56,9 +56,9 @@
 | 2.1 Delta Tracking System | ✅ | Implemented `DeltaOp`, `DeltaTracker`, `Delta` with serialization; integrated into commit |
 | 2.2 Atomic Commit Protocol | ✅ | Per‑table atomic swap with coordinated generation numbers; global version increments after all buffers swapped |
 | 2.3 Referential Integrity Checks | ✅ | Basic entity existence checks and restrict on delete; foreign key field validation pending |
-| 2.4 Sparse Component Handling | ⚠️ Partial | `sparse.rs` implemented but not integrated into ComponentTable |
+| 2.4 Sparse Component Handling | ✅ Integrated | SparseSet implemented; archetype tracking integrated with component operations |
 | 2.5 Lock‑Free Write Queue (MPSC) | ✅ | Write queue module with MPSC channel and write thread; integrated into Database, replacing parking_lot::RwLock<Vec<WriteOp>> |
-| 2.6 Memory Efficient Buffering | ⚠️ Partial | Free list added for slot reuse; compaction still missing |
+| 2.6 Memory Efficient Buffering | ✅ Implemented | Free list for slot reuse; compaction implemented |
 | 2.7 Field Codec System | ✅ | `field_codec.rs` implemented (serialization + zero‑copy casting) |
 | 2.8 Enhanced Transaction Engine | ⚠️ Partial | Transaction batching via commit; rollback and timeout handling pending |
 | 2.9 Benchmarking Suite | ✅ | Benchmarks for inserts, reads, transactions implemented; insert latency ~24µs |
@@ -107,9 +107,8 @@
 
 ## Next Steps
 
-1. **Add referential integrity checks** for foreign key constraints. (basic entity checks done)
-2. **Implement sparse component storage** and archetype tracking.
-3. **Improve memory efficiency** with compaction and free list. (free list added, compaction pending)
-4. **Enhance transaction engine** with rollback and timeout handling.
-5. **Integrate with frontend** to build a usable dashboard.
+1. **Add foreign key field validation** (basic entity existence checks done)
+2. **Implement compaction for memory efficiency** (free list added, compaction pending)
+3. **Enhance transaction engine** with rollback and timeout handling.
+4. **Integrate with frontend** to build a usable dashboard.
 

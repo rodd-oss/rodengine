@@ -151,6 +151,18 @@ impl<T: Component> ComponentTable<T> {
     pub fn record_size(&self) -> usize {
         self.buffer.record_size
     }
+
+    /// Compacts the storage buffer, moving active records to fill gaps.
+    /// Updates internal entity index to reflect new offsets.
+    pub fn compact(&mut self) {
+        let mapping = self.buffer.compact();
+        // Update entity_index offsets
+        for offset in self.entity_index.values_mut() {
+            if let Some(new_offset) = mapping.get(offset) {
+                *offset = *new_offset;
+            }
+        }
+    }
 }
 
 // Implement ZeroCopyComponent for simple primitives as example.
@@ -236,6 +248,43 @@ mod tests {
         let retrieved = table.get(1)?;
         assert_eq!(retrieved, comp);
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_table_compact() -> Result<()> {
+        let mut table = ComponentTable::<TestComponent>::with_static_size(1024);
+        // Insert a few components
+        let comp_a = TestComponent {
+            x: 1.0,
+            y: 2.0,
+            id: 1,
+        };
+        let comp_b = TestComponent {
+            x: 3.0,
+            y: 4.0,
+            id: 2,
+        };
+        let comp_c = TestComponent {
+            x: 5.0,
+            y: 6.0,
+            id: 3,
+        };
+        table.insert(1, &comp_a)?;
+        table.insert(2, &comp_b)?;
+        table.insert(3, &comp_c)?;
+        table.commit(); // Make inserts visible
+                        // Delete middle component to create a gap
+        table.delete(2)?;
+        table.commit(); // Make delete visible
+                        // Ensure component 2 is gone
+        assert!(table.get(2).is_err());
+        // Compact (operates on write buffer)
+        table.compact();
+        table.commit(); // Make compaction visible
+                        // Verify components 1 and 3 still accessible
+        assert_eq!(table.get(1)?, comp_a);
+        assert_eq!(table.get(3)?, comp_c);
         Ok(())
     }
 }
