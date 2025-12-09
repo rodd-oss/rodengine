@@ -1,8 +1,7 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
+use ecsdb::db::Database;
 use std::result::Result;
 use std::sync::{Arc, Mutex};
-use ecsdb::db::Database;
-
 
 /// Application state shared across commands
 struct AppState {
@@ -23,11 +22,11 @@ async fn init_database(
 ) -> Result<u64, String> {
     let db = Database::from_schema_file(&schema_path)
         .map_err(|e| format!("Failed to load schema: {}", e))?;
-    
+
     // Store database in application state
     let mut db_lock = state.db.lock().unwrap();
     *db_lock = Some(Arc::new(db));
-    
+
     // For demonstration, return version (currently 0)
     Ok(0)
 }
@@ -37,11 +36,14 @@ async fn init_database(
 #[tauri::command]
 async fn create_entity(state: tauri::State<'_, AppState>) -> Result<u64, String> {
     let db_lock = state.db.lock().unwrap();
-    let db = db_lock.as_ref().ok_or("Database not initialized. Call init_database first.")?;
-    
-    let entity_id = db.create_entity()
+    let db = db_lock
+        .as_ref()
+        .ok_or("Database not initialized. Call init_database first.")?;
+
+    let entity_id = db
+        .create_entity()
         .map_err(|e| format!("Failed to create entity: {}", e))?;
-    
+
     Ok(entity_id.0)
 }
 
@@ -49,8 +51,14 @@ async fn create_entity(state: tauri::State<'_, AppState>) -> Result<u64, String>
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .manage(AppState { db: Mutex::new(None) })
-        .invoke_handler(tauri::generate_handler![greet, init_database, create_entity])
+        .manage(AppState {
+            db: Mutex::new(None),
+        })
+        .invoke_handler(tauri::generate_handler![
+            greet,
+            init_database,
+            create_entity
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

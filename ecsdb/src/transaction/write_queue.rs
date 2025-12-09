@@ -85,11 +85,15 @@ impl WriteQueue {
                         response,
                     } => {
                         let txn_id = wal.begin_transaction();
-                        if let Err(e) = wal.log_operation(txn_id, 0, WalOp::Insert {
-                            table_id,
-                            entity_id,
-                            data: data.clone(),
-                        }) {
+                        if let Err(e) = wal.log_operation(
+                            txn_id,
+                            0,
+                            WalOp::Insert {
+                                table_id,
+                                entity_id,
+                                data: data.clone(),
+                            },
+                        ) {
                             let _ = response.send(Err(e));
                             continue;
                         }
@@ -112,11 +116,15 @@ impl WriteQueue {
                         response,
                     } => {
                         let txn_id = wal.begin_transaction();
-                        if let Err(e) = wal.log_operation(txn_id, 0, WalOp::Update {
-                            table_id,
-                            entity_id,
-                            data: data.clone(),
-                        }) {
+                        if let Err(e) = wal.log_operation(
+                            txn_id,
+                            0,
+                            WalOp::Update {
+                                table_id,
+                                entity_id,
+                                data: data.clone(),
+                            },
+                        ) {
                             let _ = response.send(Err(e));
                             continue;
                         }
@@ -138,10 +146,14 @@ impl WriteQueue {
                         response,
                     } => {
                         let txn_id = wal.begin_transaction();
-                        if let Err(e) = wal.log_operation(txn_id, 0, WalOp::Delete {
-                            table_id,
-                            entity_id,
-                        }) {
+                        if let Err(e) = wal.log_operation(
+                            txn_id,
+                            0,
+                            WalOp::Delete {
+                                table_id,
+                                entity_id,
+                            },
+                        ) {
                             let _ = response.send(Err(e));
                             continue;
                         }
@@ -165,26 +177,31 @@ impl WriteQueue {
                         for (seq, op) in operations.into_iter().enumerate() {
                             // Log operation to WAL
                             let wal_op = match &op {
-                                WriteOpWithoutResponse::Insert { table_id, entity_id, data } => {
-                                    WalOp::Insert {
-                                        table_id: *table_id,
-                                        entity_id: *entity_id,
-                                        data: data.clone(),
-                                    }
-                                }
-                                WriteOpWithoutResponse::Update { table_id, entity_id, data } => {
-                                    WalOp::Update {
-                                        table_id: *table_id,
-                                        entity_id: *entity_id,
-                                        data: data.clone(),
-                                    }
-                                }
-                                WriteOpWithoutResponse::Delete { table_id, entity_id } => {
-                                    WalOp::Delete {
-                                        table_id: *table_id,
-                                        entity_id: *entity_id,
-                                    }
-                                }
+                                WriteOpWithoutResponse::Insert {
+                                    table_id,
+                                    entity_id,
+                                    data,
+                                } => WalOp::Insert {
+                                    table_id: *table_id,
+                                    entity_id: *entity_id,
+                                    data: data.clone(),
+                                },
+                                WriteOpWithoutResponse::Update {
+                                    table_id,
+                                    entity_id,
+                                    data,
+                                } => WalOp::Update {
+                                    table_id: *table_id,
+                                    entity_id: *entity_id,
+                                    data: data.clone(),
+                                },
+                                WriteOpWithoutResponse::Delete {
+                                    table_id,
+                                    entity_id,
+                                } => WalOp::Delete {
+                                    table_id: *table_id,
+                                    entity_id: *entity_id,
+                                },
                             };
                             if let Err(e) = wal.log_operation(transaction_id, seq as u32, wal_op) {
                                 all_ok = false;
@@ -274,7 +291,11 @@ impl WriteQueue {
 
     /// Sends a batch of operations to be applied atomically.
     /// Returns the new database version after the commit.
-    pub fn commit_batch(&self, transaction_id: u64, operations: Vec<WriteOpWithoutResponse>) -> Result<u64> {
+    pub fn commit_batch(
+        &self,
+        transaction_id: u64,
+        operations: Vec<WriteOpWithoutResponse>,
+    ) -> Result<u64> {
         let (tx, rx) = mpsc::channel();
         let op = WriteOp::CommitBatch {
             transaction_id,

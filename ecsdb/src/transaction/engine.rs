@@ -83,15 +83,32 @@ impl TransactionEngine {
         let txn_id = self.wal.begin_transaction();
         for (seq, op) in txn.operations.into_iter().enumerate() {
             let wal_op = match op {
-                TransactionOp::Insert { table_id, entity_id, data } => {
-                    WalOp::Insert { table_id, entity_id, data }
-                }
-                TransactionOp::Update { table_id, entity_id, field_offset: _, data } => {
-                    WalOp::Update { table_id, entity_id, data }
-                }
-                TransactionOp::Delete { table_id, entity_id } => {
-                    WalOp::Delete { table_id, entity_id }
-                }
+                TransactionOp::Insert {
+                    table_id,
+                    entity_id,
+                    data,
+                } => WalOp::Insert {
+                    table_id,
+                    entity_id,
+                    data,
+                },
+                TransactionOp::Update {
+                    table_id,
+                    entity_id,
+                    field_offset: _,
+                    data,
+                } => WalOp::Update {
+                    table_id,
+                    entity_id,
+                    data,
+                },
+                TransactionOp::Delete {
+                    table_id,
+                    entity_id,
+                } => WalOp::Delete {
+                    table_id,
+                    entity_id,
+                },
             };
             self.wal.log_operation(txn_id, seq as u32, wal_op)?;
         }

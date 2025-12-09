@@ -111,7 +111,12 @@ impl WalLogger {
     }
 
     /// Logs an operation as part of a transaction.
-    pub fn log_operation(&mut self, transaction_id: u64, sequence: u32, operation: WalOp) -> Result<()> {
+    pub fn log_operation(
+        &mut self,
+        transaction_id: u64,
+        sequence: u32,
+        operation: WalOp,
+    ) -> Result<()> {
         let entry = WalEntry::new(transaction_id, sequence, operation);
         self.entries.push(entry);
         Ok(())
@@ -177,11 +182,15 @@ mod tests {
 
     #[test]
     fn test_wal_entry_checksum() {
-        let entry = WalEntry::new(1, 0, WalOp::Insert {
-            table_id: 1,
-            entity_id: 100,
-            data: vec![1, 2, 3],
-        });
+        let entry = WalEntry::new(
+            1,
+            0,
+            WalOp::Insert {
+                table_id: 1,
+                entity_id: 100,
+                data: vec![1, 2, 3],
+            },
+        );
         assert!(entry.validate_checksum());
         // Tamper with data
         let mut tampered = entry.clone();
@@ -193,17 +202,26 @@ mod tests {
     fn test_wal_logger() {
         let mut wal = WalLogger::new();
         let txn_id = wal.begin_transaction();
-        wal.log_operation(txn_id, 0, WalOp::Insert {
-            table_id: 1,
-            entity_id: 100,
-            data: vec![],
-        }).unwrap();
+        wal.log_operation(
+            txn_id,
+            0,
+            WalOp::Insert {
+                table_id: 1,
+                entity_id: 100,
+                data: vec![],
+            },
+        )
+        .unwrap();
         wal.log_commit(txn_id).unwrap();
         assert_eq!(wal.len(), 2);
         let entries = wal.entries_for_transaction(txn_id);
         assert_eq!(entries.len(), 2);
         match &entries[0].operation {
-            WalOp::Insert { table_id, entity_id, .. } => {
+            WalOp::Insert {
+                table_id,
+                entity_id,
+                ..
+            } => {
                 assert_eq!(*table_id, 1);
                 assert_eq!(*entity_id, 100);
             }

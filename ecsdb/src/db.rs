@@ -1,7 +1,7 @@
 use crate::component::{Component, ZeroCopyComponent};
 use crate::entity::{archetype::ArchetypeRegistry, EntityId, EntityRegistry};
 use crate::error::{EcsDbError, Result};
-use crate::schema::{parser::SchemaParser, DatabaseSchema, types::FieldDefinition};
+use crate::schema::{parser::SchemaParser, types::FieldDefinition, DatabaseSchema};
 use crate::storage::delta::DeltaTracker;
 use crate::storage::layout::{compute_record_layout, RecordLayout};
 use crate::storage::table::ComponentTable;
@@ -9,8 +9,6 @@ use crate::transaction::{WriteOpWithoutResponse, WriteQueue};
 use dashmap::DashMap;
 
 use std::sync::Arc;
-
-
 
 /// Main database handle providing concurrent access to ECS data.
 pub struct Database {
@@ -259,11 +257,9 @@ impl Database {
         }
 
         // Look up table definition from schema
-        let table_def = self.schema
-            .find_table(T::TABLE_NAME)
-            .ok_or_else(|| EcsDbError::SchemaError(
-                format!("Table '{}' not found in schema", T::TABLE_NAME)
-            ))?;
+        let table_def = self.schema.find_table(T::TABLE_NAME).ok_or_else(|| {
+            EcsDbError::SchemaError(format!("Table '{}' not found in schema", T::TABLE_NAME))
+        })?;
 
         // Compute record layout for field offset calculations
         let record_layout = compute_record_layout(&table_def.fields, &self.schema.custom_types)?;
@@ -596,7 +592,11 @@ impl<T: Component + ZeroCopyComponent> TableHandle for TableHandleImpl<T> {
         entity_registry: &parking_lot::RwLock<EntityRegistry>,
         data: &[u8],
     ) -> Result<()> {
-        for (field_def, field_layout) in self.field_definitions.iter().zip(&self.record_layout.fields) {
+        for (field_def, field_layout) in self
+            .field_definitions
+            .iter()
+            .zip(&self.record_layout.fields)
+        {
             if let Some(_fk) = &field_def.foreign_key {
                 // For now, assume foreign key references entities table and field is u64 entity ID
                 // Extract u64 from data at field offset
@@ -628,7 +628,7 @@ impl<T: Component + ZeroCopyComponent> TableHandle for TableHandleImpl<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::schema::{TableDefinition, FieldType};
+    use crate::schema::{FieldType, TableDefinition};
     use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Copy)]
