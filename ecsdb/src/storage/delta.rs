@@ -149,3 +149,132 @@ impl DeltaTracker {
         self.before_images.clear();
     }
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::{EcsDbError, Result};
+
+    #[test]
+    fn test_delta_op_serialization() -> Result<()> {
+        let op = DeltaOp::Insert {
+            table_id: 1,
+            entity_id: 100,
+            data: vec![1, 2, 3],
+        };
+        let bytes = bincode::serialize(&op).map_err(EcsDbError::SerializationError)?;
+        let decoded: DeltaOp = bincode::deserialize(&bytes).map_err(EcsDbError::SerializationError)?;
+        match decoded {
+            DeltaOp::Insert { table_id, entity_id, data } => {
+                assert_eq!(table_id, 1);
+                assert_eq!(entity_id, 100);
+                assert_eq!(data, vec![1, 2, 3]);
+            }
+            _ => panic!("Unexpected variant"),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_delta_serialization() -> Result<()> {
+        let mut delta = Delta::new(5, 12345);
+        delta.push(DeltaOp::Insert {
+            table_id: 2,
+            entity_id: 200,
+            data: vec![4, 5, 6],
+        });
+        let bytes = delta.serialize()?;
+        let decoded = Delta::deserialize(&bytes)?;
+        assert_eq!(decoded.version, 5);
+        assert_eq!(decoded.timestamp, 12345);
+        assert_eq!(decoded.ops.len(), 1);
+        Ok(())
+    }
+
+    #[test]
+    fn test_delta_tracker_record_insert() {
+        let mut tracker = DeltaTracker::new(1, 1000);
+        tracker.record_insert(3, 300, &[7, 8, 9]);
+        let delta = tracker.take_delta();
+        assert_eq!(delta.version, 1);
+        assert_eq!(delta.timestamp, 1000);
+        assert_eq!(delta.ops.len(), 1);
+        match &delta.ops[0] {
+            DeltaOp::Insert { table_id, entity_id, data } => {
+                assert_eq!(*table_id, 3);
+                assert_eq!(*entity_id, 300);
+                assert_eq!(data, &vec![7, 8, 9]);
+            }
+            _ => panic!("Unexpected op"),
+        }
+    }
+
+    #[test]
+    fn test_delta_tracker_record_update() {
+        let mut tracker = DeltaTracker::new(2, 2000);
+        tracker.record_update(4, 400, 0, &[1], &[2]);
+        let delta = tracker.take_delta();
+        assert_eq!(delta.ops.len(), 1);
+        match &delta.ops[0] {
+            DeltaOp::Update { table_id, entity_id, field_offset, old_data, new_data } => {
+                assert_eq!(*table_id, 4);
+                assert_eq!(*entity_id, 400);
+                assert_eq!(*field_offset, 0);
+                assert_eq!(old_data, &vec![1]);
+                assert_eq!(new_data, &vec![2]);
+            }
+            _ => panic!("Unexpected op"),
+        }
+    }
+
+    #[test]
+    fn test_delta_tracker_record_delete() {
+        let mut tracker = DeltaTracker::new(3, 3000);
+        tracker.record_delete(5, 500, &[10, 11]);
+        let delta = tracker.take_delta();
+        assert_eq!(delta.ops.len(), 1);
+        match &delta.ops[0] {
+            DeltaOp::Delete { table_id, entity_id, old_data } => {
+                assert_eq!(*table_id, 5);
+                assert_eq!(*entity_id, 500);
+                assert_eq!(old_data, &vec![10, 11]);
+            }
+            _ => panic!("Unexpected op"),
+        }
+    }
+
+    #[test]
+    fn test_delta_tracker_record_create_delete_entity() {
+        let mut tracker = DeltaTracker::new(4, 4000);
+        tracker.record_create_entity(600);
+        tracker.record_delete_entity(600);
+        let delta = tracker.take_delta();
+        assert_eq!(delta.ops.len(), 2);
+        match &delta.ops[0] {
+            DeltaOp::CreateEntity { entity_id } => assert_eq!(*entity_id, 600),
+            _ => panic!("Unexpected op"),
+        }
+        match &delta.ops[1] {
+            DeltaOp::DeleteEntity { entity_id } => assert_eq!(*entity_id, 600),
+            _ => panic!("Unexpected op"),
+        }
+    }
+
+    #[test]
+    fn test_delta_tracker_before_images() {
+        let mut tracker = DeltaTracker::new(5, 5000);
+        tracker.store_before_image(6, 700, vec![20, 21]);
+        assert_eq!(tracker.get_before_image(6, 700), Some(vec![20, 21]));
+        assert_eq!(tracker.get_before_image(6, 701), None);
+        tracker.clear_before_images();
+        assert_eq!(tracker.get_before_image(6, 700), None);
+    }
+
+    #[test]
+    fn test_delta_tracker_take_delta_resets() {
+        let mut tracker = DeltaTracker::new(6, 6000);
+        tracker.record_insert(7, 800, &[30]);
+        let delta1 = tracker.take_delta();
+        assert_eq!(delta1.ops.len(), 1);
+        assert!(tracker.take_delta().is_empty());
+    }
+}

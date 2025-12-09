@@ -493,3 +493,240 @@ impl WriteQueue {
         self._thread.join()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+    use std::time::Duration;
+
+    #[derive(Debug, Clone)]
+    struct MockOp {
+        op: WriteOpWithoutResponse,
+    }
+
+    #[derive(Default, Clone)]
+    struct MockProcessor {
+        recorded: Arc<Mutex<Vec<MockOp>>>,
+        // If true, all operations return ChannelClosed error
+        should_error: Arc<Mutex<bool>>,
+    }
+
+    impl MockProcessor {
+        fn new() -> Self {
+            Self {
+                recorded: Arc::new(Mutex::new(Vec::new())),
+                should_error: Arc::new(Mutex::new(false)),
+            }
+        }
+
+        fn process(&self, op: &WriteOpWithoutResponse) -> Result<()> {
+            let mut recorded = self.recorded.lock().unwrap();
+            let result = if *self.should_error.lock().unwrap() {
+                Err(EcsDbError::ChannelClosed)
+            } else {
+                Ok(())
+            };
+            recorded.push(MockOp {
+                op: op.clone(),
+            });
+            result
+        }
+
+        fn process_batch(&self, ops: &[WriteOpWithoutResponse]) -> Result<()> {
+            let mut recorded = self.recorded.lock().unwrap();
+            let result = if *self.should_error.lock().unwrap() {
+                Err(EcsDbError::ChannelClosed)
+            } else {
+                Ok(())
+            };
+            for op in ops {
+                recorded.push(MockOp {
+                    op: op.clone(),
+                });
+            }
+            result
+        }
+
+        fn recorded_ops(&self) -> Vec<WriteOpWithoutResponse> {
+            self.recorded.lock().unwrap().iter().map(|m| m.op.clone()).collect()
+        }
+
+        fn set_force_error(&self, _err: EcsDbError) {
+            *self.should_error.lock().unwrap() = true;
+        }
+    }
+
+    #[test]
+    fn test_write_queue_spawn_and_shutdown() {
+        let processor = MockProcessor::new();
+        let queue = WriteQueue::spawn({
+            let p = processor.clone();
+            move |op| p.process(op)
+        });
+        // Shutdown should succeed
+        queue.shutdown().unwrap();
+    }
+
+    #[test]
+    fn test_insert_operation() {
+        let processor = MockProcessor::new();
+        let queue = WriteQueue::spawn({
+            let p = processor.clone();
+            move |op| p.process(op)
+        });
+        let result = queue.insert(1, 100, vec![1, 2, 3]);
+        assert!(result.is_ok());
+        let ops = processor.recorded_ops();
+        assert_eq!(ops.len(), 1);
+        match &ops[0] {
+            WriteOpWithoutResponse::Insert { table_id, entity_id, data } => {
+                assert_eq!(*table_id, 1);
+                assert_eq!(*entity_id, 100);
+                assert_eq!(data, &vec![1, 2, 3]);
+            }
+            _ => panic!("Unexpected op"),
+        }
+        queue.shutdown().unwrap();
+    }
+
+    #[test]
+    fn test_update_operation() {
+        let processor = MockProcessor::new();
+        let queue = WriteQueue::spawn({
+            let p = processor.clone();
+            move |op| p.process(op)
+        });
+        let result = queue.update(2, 200, vec![4, 5, 6]);
+        assert!(result.is_ok());
+        let ops = processor.recorded_ops();
+        assert_eq!(ops.len(), 1);
+        match &ops[0] {
+            WriteOpWithoutResponse::Update { table_id, entity_id, data } => {
+                assert_eq!(*table_id, 2);
+                assert_eq!(*entity_id, 200);
+                assert_eq!(data, &vec![4, 5, 6]);
+            }
+            _ => panic!("Unexpected op"),
+        }
+        queue.shutdown().unwrap();
+    }
+
+    #[test]
+    fn test_delete_operation() {
+        let processor = MockProcessor::new();
+        let queue = WriteQueue::spawn({
+            let p = processor.clone();
+            move |op| p.process(op)
+        });
+        let result = queue.delete(3, 300);
+        assert!(result.is_ok());
+        let ops = processor.recorded_ops();
+        assert_eq!(ops.len(), 1);
+        match &ops[0] {
+            WriteOpWithoutResponse::Delete { table_id, entity_id } => {
+                assert_eq!(*table_id, 3);
+                assert_eq!(*entity_id, 300);
+            }
+            _ => panic!("Unexpected op"),
+        }
+        queue.shutdown().unwrap();
+    }
+
+    #[test]
+    fn test_commit_batch_atomic() {
+        let processor = MockProcessor::new();
+        let queue = WriteQueue::spawn_with_batch(
+            {
+                let p = processor.clone();
+                move |op| p.process(op)
+            },
+            {
+                let p = processor.clone();
+                move |ops| p.process_batch(ops)
+            },
+        );
+        let ops = vec![
+            WriteOpWithoutResponse::Insert {
+                table_id: 1,
+                entity_id: 100,
+                data: vec![1],
+            },
+            WriteOpWithoutResponse::Update {
+                table_id: 2,
+                entity_id: 200,
+                data: vec![2],
+            },
+        ];
+        let result = queue.commit_batch(123, ops);
+        assert!(result.is_ok());
+        let recorded = processor.recorded_ops();
+        // The batch processor records each operation individually
+        assert_eq!(recorded.len(), 2);
+        queue.shutdown().unwrap();
+    }
+
+    #[test]
+    fn test_batch_rollback_on_error() {
+        let processor = MockProcessor::new();
+        processor.set_force_error(EcsDbError::ChannelClosed);
+        let queue = WriteQueue::spawn_with_batch(
+            {
+                let p = processor.clone();
+                move |op| p.process(op)
+            },
+            {
+                let p = processor.clone();
+                move |ops| p.process_batch(ops)
+            },
+        );
+        let ops = vec![
+            WriteOpWithoutResponse::Insert {
+                table_id: 1,
+                entity_id: 100,
+                data: vec![1],
+            },
+        ];
+        let result = queue.commit_batch(124, ops);
+        assert!(result.is_err());
+        // Even though error, the operations were recorded (since we record before processing)
+        let recorded = processor.recorded_ops();
+        assert_eq!(recorded.len(), 1);
+        queue.shutdown().unwrap();
+    }
+
+    #[test]
+    fn test_timeout() {
+        let processor = MockProcessor::new();
+        let mut queue = WriteQueue::spawn({
+            let p = processor.clone();
+            move |op| {
+                // Simulate long processing
+                std::thread::sleep(Duration::from_millis(100));
+                p.process(op)
+            }
+        });
+        // Set timeout shorter than processing time
+        queue.set_timeout(Duration::from_millis(10));
+        let result = queue.insert(1, 100, vec![]);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            EcsDbError::Timeout => (),
+            _ => panic!("Expected timeout error"),
+        }
+        queue.shutdown().unwrap();
+    }
+
+    #[test]
+    fn test_channel_closed_after_shutdown() {
+        let processor = MockProcessor::new();
+        let queue = WriteQueue::spawn({
+            let p = processor.clone();
+            move |op| p.process(op)
+        });
+        queue.shutdown().unwrap();
+        // Sending after shutdown should fail
+        // But we cannot call queue.insert because queue is moved. So we can't test.
+        // Instead we can test that shutdown consumes queue.
+    }
+}

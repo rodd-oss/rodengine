@@ -376,3 +376,170 @@ impl ArcStorageBuffer {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::Result;
+
+    #[test]
+    fn test_arc_storage_buffer_new() {
+        let buffer = ArcStorageBuffer::new(16, 1024);
+        assert_eq!(buffer.record_size, 16);
+        assert_eq!(buffer.write_buffer.len(), 1024);
+        assert_eq!(buffer.record_count(), 0);
+        assert_eq!(buffer.free_list.len(), 0);
+        assert_eq!(buffer.generation(), 0);
+    }
+
+    #[test]
+    fn test_insert_record_size_mismatch() {
+        let mut buffer = ArcStorageBuffer::new(16, 1024);
+        let data = vec![0u8; 15];
+        let result = buffer.insert(&data);
+        assert!(result.is_err());
+        if let Err(EcsDbError::SchemaError(msg)) = result {
+            assert!(msg.contains("Record size mismatch"));
+        }
+    }
+
+    #[test]
+    fn test_insert_and_read() -> Result<()> {
+        let mut buffer = ArcStorageBuffer::new(8, 1024);
+        let data = vec![1u8, 2, 3, 4, 5, 6, 7, 8];
+        let offset = buffer.insert(&data)?;
+        assert_eq!(offset, 0);
+        // Write buffer has data, but read buffer not yet committed
+        let read_data = buffer.read(offset, 8)?;
+        assert_eq!(read_data, vec![0u8; 8]); // read buffer still zeroed
+        // Commit
+        buffer.commit();
+        // Now read buffer should have data
+        let read_data = buffer.read(offset, 8)?;
+        assert_eq!(read_data, data);
+        Ok(())
+    }
+
+    #[test]
+    fn test_insert_free_slot_reuse() -> Result<()> {
+        let mut buffer = ArcStorageBuffer::new(4, 1024);
+        let data1 = vec![1u8; 4];
+        let offset1 = buffer.insert(&data1)?;
+        assert_eq!(offset1, 0);
+        buffer.free_slot(offset1);
+        assert_eq!(buffer.free_list.len(), 1);
+        // Next insert should reuse freed slot
+        let data2 = vec![2u8; 4];
+        let offset2 = buffer.insert(&data2)?;
+        assert_eq!(offset2, offset1); // reused same offset
+        assert_eq!(buffer.free_list.len(), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn test_update() -> Result<()> {
+        let mut buffer = ArcStorageBuffer::new(4, 1024);
+        let data = vec![1u8; 4];
+        let offset = buffer.insert(&data)?;
+        buffer.commit();
+        // Update write buffer
+        let new_data = vec![9u8; 4];
+        buffer.update(offset, &new_data)?;
+        // Not yet committed, read buffer unchanged
+        assert_eq!(buffer.read(offset, 4)?, data);
+        buffer.commit();
+        assert_eq!(buffer.read(offset, 4)?, new_data);
+        Ok(())
+    }
+
+    #[test]
+    fn test_generation() -> Result<()> {
+        let mut buffer = ArcStorageBuffer::new(4, 1024);
+        assert_eq!(buffer.generation(), 0);
+        buffer.commit_with_generation(5);
+        assert_eq!(buffer.generation(), 5);
+        Ok(())
+    }
+
+    #[test]
+    fn test_compact() -> Result<()> {
+        let mut buffer = ArcStorageBuffer::new(8, 1024);
+        // Insert three records
+        let offsets: Vec<_> = (0..3)
+            .map(|i| buffer.insert(&vec![i; 8]).unwrap())
+            .collect();
+        // Free middle record
+        buffer.free_slot(offsets[1]);
+        assert_eq!(buffer.free_list.len(), 1);
+        // Compact
+        let mapping = buffer.compact();
+        // Expect mapping from old offset[2] (16) to new offset[1] (8)
+        assert_eq!(mapping.get(&offsets[2]), Some(&8));
+        // After compaction, free list cleared
+        assert_eq!(buffer.free_list.len(), 0);
+        // Next insert should go to slot 2 (offset 16) because next_record_offset = 2
+        let offset = buffer.insert(&vec![99u8; 8])?;
+        assert_eq!(offset, 16);
+        Ok(())
+    }
+
+    #[test]
+    fn test_snapshot_restore_state() -> Result<()> {
+        let mut buffer = ArcStorageBuffer::new(4, 1024);
+        let offsets: Vec<_> = (0..3)
+            .map(|i| buffer.insert(&vec![i; 4]).unwrap())
+            .collect();
+        buffer.free_slot(offsets[1]);
+        let snapshot = buffer.snapshot_state();
+        // Modify buffer after snapshot
+        buffer.insert(&vec![99u8; 4])?;
+        buffer.free_slot(offsets[0]);
+        // Restore snapshot
+        buffer.restore_state(snapshot.0, snapshot.1, snapshot.2, snapshot.3);
+        // Should be back to original state
+        assert_eq!(buffer.next_record_offset, 3);
+        assert_eq!(buffer.free_list.len(), 1);
+        assert_eq!(buffer.free_list[0], offsets[1]);
+        assert_eq!(buffer.active_count, 2);
+        Ok(())
+    }
+
+    #[test]
+    fn test_fragmentation_ratio() -> Result<()> {
+        let mut buffer = ArcStorageBuffer::new(4, 1024);
+        assert_eq!(buffer.fragmentation_ratio(), 0.0);
+        let offset = buffer.insert(&vec![0u8; 4])?;
+        buffer.free_slot(offset);
+        // One free slot out of one total slot
+        assert_eq!(buffer.fragmentation_ratio(), 1.0);
+        buffer.insert(&vec![1u8; 4])?;
+        // No free slots, total slots = 2 (next_record_offset = 2)
+        assert_eq!(buffer.fragmentation_ratio(), 0.0);
+        Ok(())
+    }
+
+    #[test]
+    fn test_load_snapshot() -> Result<()> {
+        let mut buffer = ArcStorageBuffer::new(8, 1024);
+        let snapshot_data = vec![1u8, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]; // two records
+        let free_slots = vec![8]; // second record is free
+        buffer.load_snapshot(snapshot_data.clone(), free_slots)?;
+        assert_eq!(buffer.write_buffer.len(), 16);
+        assert_eq!(buffer.next_record_offset, 2);
+        assert_eq!(buffer.free_list, vec![8]);
+        assert_eq!(buffer.active_count, 1);
+        // Read buffer should have snapshot data
+        buffer.commit();
+        assert_eq!(buffer.read(0, 8)?, vec![1u8, 2, 3, 4, 5, 6, 7, 8]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_load_snapshot_invalid_size() {
+        let mut buffer = ArcStorageBuffer::new(8, 1024);
+        let snapshot_data = vec![1u8; 15]; // not multiple of 8
+        let free_slots = vec![];
+        let result = buffer.load_snapshot(snapshot_data, free_slots);
+        assert!(result.is_err());
+    }
+}

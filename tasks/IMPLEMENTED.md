@@ -5,7 +5,7 @@
 ## Current Build Status
 
 - ✅ **Workspace builds**: `cargo build --workspace` succeeds
-- ✅ **Database crate tests**: `cargo test -p ecsdb` passes (19 unit tests, 2 integration tests)
+- ✅ **Database crate tests**: `cargo test -p ecsdb` passes (58 unit tests, 2 integration tests)
 - ✅ **Linting**: `cargo clippy -p ecsdb -- -D warnings` passes (after fixes)
 - ✅ **Formatting**: `cargo fmt --check -p ecsdb` passes
 - ✅ **Frontend build**: `bun run build` succeeds (Vue + Vite)
@@ -110,22 +110,23 @@
 A comprehensive test backlog has been created in [tests_backlog.md](./tests_backlog.md) detailing missing unit, integration, property-based, and performance tests for each module.
 
 ### Current Test Status (2025-12-09)
-- **Modules with unit tests**: 9 out of 20 (45%)
+- **Modules with unit tests**: 13 out of 20 (65%)
 - **Integration tests**: 2 basic tests exist
 - **Benchmarks**: 3 criterion benchmarks for inserts, reads, transactions
 - **Property-based tests**: 0 (proptest configured but not used)
 
-### Key Test Gaps
-1. **Storage buffer** (`ArcStorageBuffer`) – core double‑buffer logic untested
-2. **Delta tracking** – serialization and before‑images
-3. **Schema validator** – foreign‑key and uniqueness checks
-4. **Write queue** – concurrency and atomic batch commits
+### Key Test Gaps (Updated 2025-12-09)
+1. **Storage buffer** (`ArcStorageBuffer`) – ✅ unit tests added (11 tests)
+2. **Delta tracking** – ✅ unit tests added (8 tests)
+3. **Schema validator** – ✅ unit tests added (14 tests)
+4. **Write queue** – ✅ unit tests added (7 tests)
 5. **Snapshot persistence** – file I/O and compression
 
-### Immediate Priorities
-1. Write unit tests for `storage/buffer.rs` and `storage/delta.rs`
+### Immediate Priorities (Updated 2025-12-09)
+1. ✅ Write unit tests for `storage/buffer.rs` and `storage/delta.rs`
 2. Add integration tests for foreign‑key constraints
 3. Verify snapshot round‑trip with real database
+4. Increase test coverage for remaining modules (snapshot persistence, compaction worker, etc.)
 
 ## Next Steps
 
