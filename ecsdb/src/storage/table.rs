@@ -147,6 +147,15 @@ impl<T: Component> ComponentTable<T> {
         self.entity_index.contains_key(&entity_id)
     }
 
+    /// Returns mapping from entity ID to byte offset in the read buffer.
+    /// Used for snapshot serialization.
+    pub fn entity_mapping(&self) -> Vec<(u64, usize)> {
+        self.entity_index
+            .iter()
+            .map(|(&id, &offset)| (id, offset))
+            .collect()
+    }
+
     /// Returns the record size used by this table.
     pub fn record_size(&self) -> usize {
         self.buffer.record_size
@@ -192,6 +201,32 @@ impl<T: Component> ComponentTable<T> {
         // After restore, entity index may be invalid because offsets changed.
         // Since rollback restores exact state, offsets should match existing entity index.
         // We assume no compaction occurred during the batch.
+    }
+
+    /// Loads snapshot data into the table, replacing the current buffer and index.
+    /// This resets both read and write buffers to the provided snapshot data.
+    pub fn load_snapshot(
+        &mut self,
+        buffer_data: Vec<u8>,
+        entity_mapping: Vec<(u64, usize)>,
+        free_slots: Vec<usize>,
+    ) -> Result<()> {
+        // Validate buffer size matches record size
+        if !buffer_data.len().is_multiple_of(self.buffer.record_size) {
+            return Err(EcsDbError::SchemaError(format!(
+                "Buffer size {} is not a multiple of record size {}",
+                buffer_data.len(),
+                self.buffer.record_size
+            )));
+        }
+        // Load into buffer
+        self.buffer.load_snapshot(buffer_data, free_slots)?;
+        // Rebuild entity index
+        self.entity_index.clear();
+        for (entity_id, offset) in entity_mapping {
+            self.entity_index.insert(entity_id, offset);
+        }
+        Ok(())
     }
 }
 

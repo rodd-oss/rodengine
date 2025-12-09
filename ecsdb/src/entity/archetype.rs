@@ -2,11 +2,12 @@
 //!
 //! Archetypes group entities by their component composition for cache‑friendly iteration.
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Bitmask representing a set of component types.
 /// Each bit corresponds to a component table ID (0‑63).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ArchetypeMask(pub u64);
 
 impl ArchetypeMask {
@@ -49,6 +50,7 @@ impl ArchetypeMask {
 pub type ArchetypeId = ArchetypeMask;
 
 /// Tracks which entities belong to which archetype.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ArchetypeRegistry {
     /// Map from archetype mask to list of entity IDs.
     archetype_entities: HashMap<ArchetypeMask, Vec<u64>>,

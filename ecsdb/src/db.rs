@@ -66,6 +66,18 @@ pub trait TableHandle {
     /// Returns true if the entity has a component in this table.
     fn contains_entity(&self, entity_id: u64) -> bool;
 
+    /// Returns mapping from entity ID to byte offset in the read buffer.
+    /// Used for snapshot serialization.
+    fn entity_mapping(&self) -> Vec<(u64, usize)>;
+
+    /// Loads snapshot data into the table, replacing the current buffer and index.
+    fn load_snapshot(
+        &mut self,
+        buffer_data: Vec<u8>,
+        entity_mapping: Vec<(u64, usize)>,
+        free_slots: Vec<usize>,
+    ) -> Result<()>;
+
     /// Returns the fragmentation ratio (free slots / total slots) as a value between 0.0 and 1.0.
     fn fragmentation_ratio(&self) -> f32;
 
@@ -123,8 +135,12 @@ impl Database {
         let entity_registry_clone = entity_registry.clone();
         let archetype_registry_clone = archetype_registry.clone();
 
-        // Create write queue with processing closure
-        let write_queue = WriteQueue::spawn(move |op| {
+        // Create write queue with separate single and batch processors
+        let tables_clone_single = tables_clone.clone();
+        let entity_registry_clone_single = entity_registry_clone.clone();
+        let archetype_registry_clone_single = archetype_registry_clone.clone();
+
+        let process_single = move |op: &WriteOpWithoutResponse| -> Result<()> {
             // Apply operation to tables and entity registry
             match op {
                 WriteOpWithoutResponse::Insert {
@@ -137,7 +153,7 @@ impl Database {
                     let data = data.clone();
 
                     // Referential integrity: ensure entity exists
-                    if !entity_registry_clone
+                    if !entity_registry_clone_single
                         .read()
                         .contains_entity(crate::entity::EntityId(entity_id))
                     {
@@ -145,9 +161,9 @@ impl Database {
                     }
 
                     // Validate foreign key constraints
-                    match tables_clone.as_ref().get(&table_id) {
+                    match tables_clone_single.as_ref().get(&table_id) {
                         Some(table) => {
-                            table.validate_foreign_keys(&entity_registry_clone, &data)?;
+                            table.validate_foreign_keys(&entity_registry_clone_single, &data)?;
                         }
                         None => {
                             return Err(crate::error::EcsDbError::ComponentNotFound {
@@ -157,11 +173,11 @@ impl Database {
                         }
                     }
 
-                    match tables_clone.as_ref().get_mut(&table_id) {
+                    match tables_clone_single.as_ref().get_mut(&table_id) {
                         Some(mut table) => {
                             let result = table.insert(entity_id, data);
                             if result.is_ok() {
-                                archetype_registry_clone
+                                archetype_registry_clone_single
                                     .write()
                                     .add_component(entity_id, table_id);
                             }
@@ -183,7 +199,7 @@ impl Database {
                     let data = data.clone();
 
                     // Referential integrity: ensure entity exists
-                    if !entity_registry_clone
+                    if !entity_registry_clone_single
                         .read()
                         .contains_entity(crate::entity::EntityId(entity_id))
                     {
@@ -191,9 +207,9 @@ impl Database {
                     }
 
                     // Validate foreign key constraints
-                    match tables_clone.as_ref().get(&table_id) {
+                    match tables_clone_single.as_ref().get(&table_id) {
                         Some(table) => {
-                            table.validate_foreign_keys(&entity_registry_clone, &data)?;
+                            table.validate_foreign_keys(&entity_registry_clone_single, &data)?;
                         }
                         None => {
                             return Err(crate::error::EcsDbError::ComponentNotFound {
@@ -203,7 +219,7 @@ impl Database {
                         }
                     }
 
-                    match tables_clone.as_ref().get_mut(&table_id) {
+                    match tables_clone_single.as_ref().get_mut(&table_id) {
                         Some(mut table) => table.update(entity_id, data),
                         None => Err(crate::error::EcsDbError::ComponentNotFound {
                             entity_id,
@@ -217,11 +233,11 @@ impl Database {
                 } => {
                     let table_id = *table_id;
                     let entity_id = *entity_id;
-                    match tables_clone.as_ref().get_mut(&table_id) {
+                    match tables_clone_single.as_ref().get_mut(&table_id) {
                         Some(mut table) => {
                             let result = table.delete(entity_id);
                             if result.is_ok() {
-                                archetype_registry_clone
+                                archetype_registry_clone_single
                                     .write()
                                     .remove_component(entity_id, table_id);
                             }
@@ -234,7 +250,174 @@ impl Database {
                     }
                 }
             }
-        });
+        };
+
+        // Batch processor that ensures atomic rollback
+        let process_batch = move |ops: &[WriteOpWithoutResponse]| -> Result<()> {
+            use std::collections::HashMap;
+
+            // Determine which tables are affected
+            let mut affected_table_ids = Vec::new();
+            for op in ops {
+                let table_id = match op {
+                    WriteOpWithoutResponse::Insert { table_id, .. } => *table_id,
+                    WriteOpWithoutResponse::Update { table_id, .. } => *table_id,
+                    WriteOpWithoutResponse::Delete { table_id, .. } => *table_id,
+                };
+                if !affected_table_ids.contains(&table_id) {
+                    affected_table_ids.push(table_id);
+                }
+            }
+
+            // Snapshot write buffer state for affected tables
+            let mut table_snapshots = HashMap::new();
+            for &table_id in &affected_table_ids {
+                if let Some(table) = tables_clone.as_ref().get(&table_id) {
+                    let snapshot = table.snapshot_write_state();
+                    table_snapshots.insert(table_id, snapshot);
+                }
+            }
+
+            // Snapshot archetype registry (clone)
+            let archetype_snapshot = archetype_registry_clone.read().clone();
+
+            // Helper to apply a single operation (using captured clones)
+            let apply_op = |op: &WriteOpWithoutResponse| -> Result<()> {
+                match op {
+                    WriteOpWithoutResponse::Insert {
+                        table_id,
+                        entity_id,
+                        data,
+                    } => {
+                        let table_id = *table_id;
+                        let entity_id = *entity_id;
+                        let data = data.clone();
+
+                        // Referential integrity: ensure entity exists
+                        if !entity_registry_clone
+                            .read()
+                            .contains_entity(crate::entity::EntityId(entity_id))
+                        {
+                            return Err(crate::error::EcsDbError::EntityNotFound(entity_id));
+                        }
+
+                        // Validate foreign key constraints
+                        match tables_clone.as_ref().get(&table_id) {
+                            Some(table) => {
+                                table.validate_foreign_keys(&entity_registry_clone, &data)?;
+                            }
+                            None => {
+                                return Err(crate::error::EcsDbError::ComponentNotFound {
+                                    entity_id,
+                                    component_type: format!("table_id={}", table_id),
+                                })
+                            }
+                        }
+
+                        match tables_clone.as_ref().get_mut(&table_id) {
+                            Some(mut table) => {
+                                let result = table.insert(entity_id, data);
+                                if result.is_ok() {
+                                    archetype_registry_clone
+                                        .write()
+                                        .add_component(entity_id, table_id);
+                                }
+                                result
+                            }
+                            None => Err(crate::error::EcsDbError::ComponentNotFound {
+                                entity_id,
+                                component_type: format!("table_id={}", table_id),
+                            }),
+                        }
+                    }
+                    WriteOpWithoutResponse::Update {
+                        table_id,
+                        entity_id,
+                        data,
+                    } => {
+                        let table_id = *table_id;
+                        let entity_id = *entity_id;
+                        let data = data.clone();
+
+                        // Referential integrity: ensure entity exists
+                        if !entity_registry_clone
+                            .read()
+                            .contains_entity(crate::entity::EntityId(entity_id))
+                        {
+                            return Err(crate::error::EcsDbError::EntityNotFound(entity_id));
+                        }
+
+                        // Validate foreign key constraints
+                        match tables_clone.as_ref().get(&table_id) {
+                            Some(table) => {
+                                table.validate_foreign_keys(&entity_registry_clone, &data)?;
+                            }
+                            None => {
+                                return Err(crate::error::EcsDbError::ComponentNotFound {
+                                    entity_id,
+                                    component_type: format!("table_id={}", table_id),
+                                })
+                            }
+                        }
+
+                        match tables_clone.as_ref().get_mut(&table_id) {
+                            Some(mut table) => table.update(entity_id, data),
+                            None => Err(crate::error::EcsDbError::ComponentNotFound {
+                                entity_id,
+                                component_type: format!("table_id={}", table_id),
+                            }),
+                        }
+                    }
+                    WriteOpWithoutResponse::Delete {
+                        table_id,
+                        entity_id,
+                    } => {
+                        let table_id = *table_id;
+                        let entity_id = *entity_id;
+                        match tables_clone.as_ref().get_mut(&table_id) {
+                            Some(mut table) => {
+                                let result = table.delete(entity_id);
+                                if result.is_ok() {
+                                    archetype_registry_clone
+                                        .write()
+                                        .remove_component(entity_id, table_id);
+                                }
+                                result
+                            }
+                            None => Err(crate::error::EcsDbError::ComponentNotFound {
+                                entity_id,
+                                component_type: format!("table_id={}", table_id),
+                            }),
+                        }
+                    }
+                }
+            };
+
+            // Apply each operation, collecting errors
+            for op in ops.iter() {
+                if let Err(err) = apply_op(op) {
+                    // Rollback: restore table snapshots
+                    for (&table_id, snapshot) in &table_snapshots {
+                        if let Some(mut table) = tables_clone.as_ref().get_mut(&table_id) {
+                            table.restore_write_state(
+                                snapshot.0.clone(),
+                                snapshot.1,
+                                snapshot.2.clone(),
+                                snapshot.3,
+                            );
+                        }
+                    }
+                    // Rollback archetype registry
+                    *archetype_registry_clone.write() = archetype_snapshot.clone();
+                    return Err(err);
+                }
+            }
+
+            // All operations succeeded
+            Ok(())
+        };
+
+        let write_queue = WriteQueue::spawn_with_batch(process_single, process_batch);
 
         Ok(Self {
             schema: Arc::new(schema),
@@ -490,6 +673,83 @@ impl Database {
     pub fn schema(&self) -> &Arc<DatabaseSchema> {
         &self.schema
     }
+
+    /// Creates a snapshot of the current database state.
+    /// The snapshot captures schema, entity registry, archetype registry, and all component tables.
+    /// This should be called after a commit to ensure consistency.
+    pub fn create_snapshot(
+        &self,
+    ) -> crate::error::Result<crate::persistence::snapshot::DatabaseSnapshot> {
+        use crate::persistence::snapshot::{DatabaseSnapshot, TableSnapshot};
+        use std::collections::HashSet;
+        let schema = self.schema.as_ref().clone();
+        let entity_registry = self.entity_registry.read().clone();
+        let archetype_registry = self.archetype_registry.read().clone();
+        let mut tables = Vec::new();
+        for entry in self.tables.iter() {
+            let table_id = *entry.key();
+            let table = entry.value();
+            let table_name = table.table_name().to_string();
+            let record_size = table.record_size();
+            let buffer_data = table.snapshot().as_ref().clone();
+            let entity_mapping = table.entity_mapping();
+            // Compute free slots: slots not referenced in entity_mapping
+            let occupied_offsets: HashSet<usize> =
+                entity_mapping.iter().map(|&(_, offset)| offset).collect();
+            let total_slots = buffer_data.len() / record_size;
+            let mut free_slots = Vec::new();
+            for slot_index in 0..total_slots {
+                let offset = slot_index * record_size;
+                if !occupied_offsets.contains(&offset) {
+                    free_slots.push(offset);
+                }
+            }
+            let active_count = entity_mapping.len();
+            tables.push(TableSnapshot {
+                table_id,
+                table_name,
+                record_size,
+                buffer_data,
+                entity_mapping,
+                free_slots,
+                active_count,
+            });
+        }
+        Ok(DatabaseSnapshot {
+            schema,
+            entity_registry,
+            archetype_registry,
+            tables,
+        })
+    }
+
+    /// Creates a new database from a snapshot.
+    pub fn from_snapshot(snapshot: crate::persistence::snapshot::DatabaseSnapshot) -> Result<Self> {
+        // Create empty database from schema
+        let db = Self::from_schema(snapshot.schema)?;
+        // Load each table snapshot
+        for table_snapshot in snapshot.tables {
+            let table_id = table_snapshot.table_id;
+            // Find the table in the database (should exist due to schema)
+            if let Some(mut table) = db.tables.as_ref().get_mut(&table_id) {
+                table.load_snapshot(
+                    table_snapshot.buffer_data,
+                    table_snapshot.entity_mapping,
+                    table_snapshot.free_slots,
+                )?;
+            } else {
+                return Err(crate::error::EcsDbError::SnapshotError(format!(
+                    "Table {} not found in database",
+                    table_snapshot.table_name
+                )));
+            }
+        }
+        // Replace entity and archetype registries
+        *db.entity_registry.write() = snapshot.entity_registry;
+        *db.archetype_registry.write() = snapshot.archetype_registry;
+        // Reset database version? Keep at zero.
+        Ok(db)
+    }
 }
 
 /// Type-erased wrapper around ComponentTable<T>.
@@ -546,6 +806,20 @@ impl<T: Component + ZeroCopyComponent> TableHandle for TableHandleImpl<T> {
 
     fn contains_entity(&self, entity_id: u64) -> bool {
         self.table.contains_entity(entity_id)
+    }
+
+    fn entity_mapping(&self) -> Vec<(u64, usize)> {
+        self.table.entity_mapping()
+    }
+
+    fn load_snapshot(
+        &mut self,
+        buffer_data: Vec<u8>,
+        entity_mapping: Vec<(u64, usize)>,
+        free_slots: Vec<usize>,
+    ) -> Result<()> {
+        self.table
+            .load_snapshot(buffer_data, entity_mapping, free_slots)
     }
 
     fn fragmentation_ratio(&self) -> f32 {

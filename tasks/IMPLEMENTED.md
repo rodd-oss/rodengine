@@ -49,7 +49,7 @@
 - ✅ No unsafe code violations (MIRI not run but unsafe is minimal and guarded)
 - ✅ Library integrates with Tauri and can be invoked from Vue frontend
 
-## Phase 2: Advanced Storage (Mostly Completed)
+## Phase 2: Advanced Storage (Completed)
 
 | Subtask | Status | Notes |
 |---------|--------|-------|
@@ -60,14 +60,14 @@
 | 2.5 Lock‑Free Write Queue (MPSC) | ✅ | Write queue module with MPSC channel and write thread; integrated into Database, replacing parking_lot::RwLock<Vec<WriteOp>> |
 | 2.6 Memory Efficient Buffering | ✅ Implemented | Free list for slot reuse; compaction implemented and integrated via `compact_if_fragmented` |
 | 2.7 Field Codec System | ✅ | `field_codec.rs` implemented (serialization + zero‑copy casting) |
-| 2.8 Enhanced Transaction Engine | ⚠️ Partial | Transaction batching via commit; timeout handling added (5s default); snapshot state for rollback implemented; rollback integrated for single operations; batch rollback not atomic |
+| 2.8 Enhanced Transaction Engine | ✅ | Transaction batching via commit; timeout handling added (5s default); snapshot state for rollback implemented; rollback integrated for single and batch operations with atomic rollback |
 | 2.9 Benchmarking Suite | ✅ | Benchmarks for inserts, reads, transactions implemented; insert latency ~24µs |
 
-## Phase 3: Persistence (Not Started)
+## Phase 3: Persistence (In Progress)
 
 | Subtask | Status | Notes |
 |---------|--------|-------|
-| 3.1 Snapshot Creation & Restoration | ❌ | Not started |
+| 3.1 Snapshot Creation & Restoration | ✅ | Implemented `DatabaseSnapshot`, `write_to_file`, `from_file`, `restore`. Supports compression and checksums. |
 | 3.2 WAL Archival and Replay | ❌ | Not started |
 | 3.3 Async I/O Integration (Tokio) | ❌ | Not started |
 | 3.4 Compaction Worker | ❌ | Not started |
@@ -107,6 +107,5 @@
 
 ## Next Steps
 
-1. **Complete rollback integration for atomic transactions** (batch rollback not atomic)
-2. **Integrate with frontend** to build a usable dashboard.
-3. **Proceed to Phase 3: Persistence** (snapshots, WAL, async I/O).
+1. **Integrate with frontend** to build a usable dashboard.
+2. **Proceed to Phase 3: Persistence** (snapshots, WAL, async I/O).

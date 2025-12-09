@@ -237,6 +237,181 @@ impl WriteQueue {
         }
     }
 
+    /// Spawns a new write thread with separate batch processor for atomic batch operations.
+    /// The `process_single` closure is called for individual insert/update/delete operations.
+    /// The `process_batch` closure is called for CommitBatch with all operations; it must
+    /// apply them atomically (all-or-nothing). If `process_batch` returns an error,
+    /// the entire batch is rolled back (via WAL rollback log).
+    pub fn spawn_with_batch<F, G>(mut process_single: F, mut process_batch: G) -> Self
+    where
+        F: FnMut(&WriteOpWithoutResponse) -> Result<()> + Send + 'static,
+        G: FnMut(&[WriteOpWithoutResponse]) -> Result<()> + Send + 'static,
+    {
+        let (tx, rx) = mpsc::channel();
+
+        let thread = thread::spawn(move || {
+            let rx = rx;
+            let mut wal = WalLogger::new();
+            while let Ok(op) = rx.recv() {
+                match op {
+                    WriteOp::Insert {
+                        table_id,
+                        entity_id,
+                        data,
+                        response,
+                    } => {
+                        let txn_id = wal.begin_transaction();
+                        if let Err(e) = wal.log_operation(
+                            txn_id,
+                            0,
+                            WalOp::Insert {
+                                table_id,
+                                entity_id,
+                                data: data.clone(),
+                            },
+                        ) {
+                            let _ = response.send(Err(e));
+                            continue;
+                        }
+                        let result = process_single(&WriteOpWithoutResponse::Insert {
+                            table_id,
+                            entity_id,
+                            data,
+                        });
+                        if result.is_ok() {
+                            let _ = wal.log_commit(txn_id);
+                        } else {
+                            let _ = wal.log_rollback(txn_id);
+                        }
+                        let _ = response.send(result);
+                    }
+                    WriteOp::Update {
+                        table_id,
+                        entity_id,
+                        data,
+                        response,
+                    } => {
+                        let txn_id = wal.begin_transaction();
+                        if let Err(e) = wal.log_operation(
+                            txn_id,
+                            0,
+                            WalOp::Update {
+                                table_id,
+                                entity_id,
+                                data: data.clone(),
+                            },
+                        ) {
+                            let _ = response.send(Err(e));
+                            continue;
+                        }
+                        let result = process_single(&WriteOpWithoutResponse::Update {
+                            table_id,
+                            entity_id,
+                            data,
+                        });
+                        if result.is_ok() {
+                            let _ = wal.log_commit(txn_id);
+                        } else {
+                            let _ = wal.log_rollback(txn_id);
+                        }
+                        let _ = response.send(result);
+                    }
+                    WriteOp::Delete {
+                        table_id,
+                        entity_id,
+                        response,
+                    } => {
+                        let txn_id = wal.begin_transaction();
+                        if let Err(e) = wal.log_operation(
+                            txn_id,
+                            0,
+                            WalOp::Delete {
+                                table_id,
+                                entity_id,
+                            },
+                        ) {
+                            let _ = response.send(Err(e));
+                            continue;
+                        }
+                        let result = process_single(&WriteOpWithoutResponse::Delete {
+                            table_id,
+                            entity_id,
+                        });
+                        if result.is_ok() {
+                            let _ = wal.log_commit(txn_id);
+                        } else {
+                            let _ = wal.log_rollback(txn_id);
+                        }
+                        let _ = response.send(result);
+                    }
+                    WriteOp::CommitBatch {
+                        transaction_id,
+                        operations,
+                        response,
+                    } => {
+                        // Log all operations first
+                        for (seq, op) in operations.iter().enumerate() {
+                            let wal_op = match op {
+                                WriteOpWithoutResponse::Insert {
+                                    table_id,
+                                    entity_id,
+                                    data,
+                                } => WalOp::Insert {
+                                    table_id: *table_id,
+                                    entity_id: *entity_id,
+                                    data: data.clone(),
+                                },
+                                WriteOpWithoutResponse::Update {
+                                    table_id,
+                                    entity_id,
+                                    data,
+                                } => WalOp::Update {
+                                    table_id: *table_id,
+                                    entity_id: *entity_id,
+                                    data: data.clone(),
+                                },
+                                WriteOpWithoutResponse::Delete {
+                                    table_id,
+                                    entity_id,
+                                } => WalOp::Delete {
+                                    table_id: *table_id,
+                                    entity_id: *entity_id,
+                                },
+                            };
+                            if let Err(e) = wal.log_operation(transaction_id, seq as u32, wal_op) {
+                                let _ = response.send(Err(e));
+                                // Already logged previous operations; need to rollback transaction
+                                let _ = wal.log_rollback(transaction_id);
+                                continue;
+                            }
+                        }
+                        // Now process batch atomically
+                        match process_batch(&operations) {
+                            Ok(()) => {
+                                if let Err(e) = wal.log_commit(transaction_id) {
+                                    let _ = response.send(Err(e));
+                                } else {
+                                    let _ = response.send(Ok(transaction_id));
+                                }
+                            }
+                            Err(e) => {
+                                let _ = wal.log_rollback(transaction_id);
+                                let _ = response.send(Err(e));
+                            }
+                        }
+                    }
+                    WriteOp::Shutdown => break,
+                }
+            }
+        });
+
+        Self {
+            tx,
+            _thread: thread,
+            timeout: DEFAULT_TIMEOUT,
+        }
+    }
+
     /// Sets the timeout for waiting for write thread responses.
     pub fn set_timeout(&mut self, timeout: Duration) {
         self.timeout = timeout;

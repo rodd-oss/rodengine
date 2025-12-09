@@ -1,19 +1,21 @@
 use crate::error::{EcsDbError, Result};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct EntityId(pub u64);
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct EntityVersion(pub u32);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EntityRecord {
     pub id: EntityId,
     pub version: EntityVersion,
     pub archetype_hash: u64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EntityRegistry {
     // Entities stored sequentially
     records: Vec<EntityRecord>,

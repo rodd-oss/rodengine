@@ -19,6 +19,7 @@ uuid = { workspace = true }
 zstd = { workspace = true }
 bytes = { workspace = true }
 crc32fast = { workspace = true }
+async-trait = { workspace = true }
 
 [dev-dependencies]
 criterion = "0.5"
@@ -26,6 +27,7 @@ proptest = "1"
 tokio-test = "0.4"
 insta = "1"
 pretty_assertions = "1"
+tempfile = "3"
 
 [[bench]]
 name = "inserts"

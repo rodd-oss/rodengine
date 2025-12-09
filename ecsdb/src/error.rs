@@ -1,4 +1,5 @@
 use thiserror::Error;
+use tokio::task::JoinError;
 
 #[derive(Error, Debug)]
 pub enum EcsDbError {
@@ -37,6 +38,24 @@ pub enum EcsDbError {
 
     #[error("Timeout waiting for write confirmation")]
     Timeout,
+
+    #[error("Snapshot error: {0}")]
+    SnapshotError(String),
+
+    #[error("Compression error: {0}")]
+    CompressionError(String),
+
+    #[error("WAL error: {0}")]
+    WalError(String),
+
+    #[error("Blocking task failed: {0}")]
+    BlockingTaskError(String),
+}
+
+impl From<JoinError> for EcsDbError {
+    fn from(err: JoinError) -> Self {
+        EcsDbError::BlockingTaskError(err.to_string())
+    }
 }
 
 pub type Result<T> = std::result::Result<T, EcsDbError>;

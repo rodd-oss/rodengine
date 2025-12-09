@@ -348,4 +348,31 @@ impl ArcStorageBuffer {
     pub fn is_fragmented(&self, threshold: f32) -> bool {
         self.fragmentation_ratio() >= threshold
     }
+
+    /// Loads a snapshot of the entire buffer, replacing both read and write buffers.
+    /// The buffer data must be a multiple of record_size.
+    pub fn load_snapshot(&mut self, buffer_data: Vec<u8>, free_slots: Vec<usize>) -> Result<()> {
+        if !buffer_data.len().is_multiple_of(self.record_size) {
+            return Err(EcsDbError::SchemaError(format!(
+                "Buffer size {} is not a multiple of record size {}",
+                buffer_data.len(),
+                self.record_size
+            )));
+        }
+        // Set write buffer to the snapshot data
+        self.write_buffer = buffer_data;
+        // Create new read buffer arc
+        let new_arc = Arc::new(self.write_buffer.clone());
+        let new_ptr = Box::leak(Box::new(new_arc)) as *mut Arc<Vec<u8>>;
+        // Swap read buffer pointer (old pointer will be leaked? We should drop old)
+        let old_ptr = self.read_buffer.swap(new_ptr, Ordering::Release);
+        // Safe deallocation of old Arc
+        let _ = unsafe { Box::from_raw(old_ptr) };
+        // Calculate total slots
+        self.next_record_offset = (self.write_buffer.len() / self.record_size) as u64;
+        self.free_list = free_slots;
+        // Active count = total slots - free slots
+        self.active_count = self.next_record_offset - self.free_list.len() as u64;
+        Ok(())
+    }
 }
