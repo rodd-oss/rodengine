@@ -87,7 +87,7 @@
 | 4.5 Full‑Sync Protocol | ✅ | Chunked snapshot transfer, progress reporting, schema + snapshot |
 | 4.6 Incremental Sync | ✅ | Delta archive, version‑based catch‑up, heartbeat manager |
 | 4.7 Client Library | ✅ | `ecsdb_client` crate with `ClientDB`, delta application, in‑memory storage |
-| 4.8 Integration with Dashboard | ✅ | Full integration with dashboard: real client list, delta queue size, conflict log, start/stop controls |
+| 4.8 Integration with Dashboard | ✅ | Full integration with dashboard: real client list, delta queue size, conflict log with table names, delta log, start/stop controls |
 | 4.9 Testing & Simulation | ⚠️ | Basic unit tests exist; missing integration and simulation tests |
 
 ## Phase 5: Dashboard & Polish (Mostly Completed)
@@ -98,13 +98,13 @@
 | 5.2 Schema Editor UI | ✅ | Schema tree view, table editor, field property panel, raw TOML editor |
 | 5.3 Data Viewer Component | ✅ | Paginated grid with filtering, sorting, inline editing, bulk operations |
 | 5.4 Query Builder UI | ✅ | Visual query builder, join builder, query preview, results display |
-| 5.5 Replication Dashboard | ✅ | Client list, delta monitor, conflict viewer, server controls |
+| 5.5 Replication Dashboard | ✅ | Client list, real delta stream, conflict viewer with table names, server controls |
 | 5.6 Integration Testing | ⚠️ Partial | Frontend‑backend integration tested manually; Tauri commands invoked successfully |
 | 5.7 Performance Profiling | ✅ | Benchmark dashboard, real-time metrics, CPU/memory charts |
 | 5.8 Documentation | ⚠️ Partial | Inline docs exist; missing user guide, architecture overview |
 | 5.9 Release Packaging | ❌ | Not started |
 | 5.10 Tauri Integration | ✅ | Store updated with Tauri invoke calls; Schema Editor, Data Viewer, Replication Dashboard connected to real database commands; file dialogs for schema loading |
-| 5.11 Polish & Bug Fixes | ⚠️ Partial | Basic UI polish; needs error messages, keyboard shortcuts, loading indicators |
+| 5.11 Polish & Bug Fixes | ⚠️ Partial | Basic UI polish; real data integration for replication dashboard; needs error messages, keyboard shortcuts, loading indicators |
 
 **Note**: Dashboard UI is fully functional with real data for Schema Editor, Data Viewer, and Replication Dashboard. Integration with actual database commands via Tauri has been implemented (see Phase 5.11).
 
