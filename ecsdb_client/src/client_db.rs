@@ -1,7 +1,7 @@
 //! Client‑side in‑memory database that mirrors server state.
 
 use crate::error::{ClientError, Result};
-use ecsdb::{Component, ZeroCopyComponent};
+use ecsdb::component::{Component, ZeroCopyComponent};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::RwLock;

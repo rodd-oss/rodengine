@@ -90,20 +90,22 @@
 | 4.8 Integration with Dashboard | ❌ | Not started |
 | 4.9 Testing & Simulation | ⚠️ | Basic unit tests exist; missing integration and simulation tests |
 
-## Phase 5: Dashboard & Polish (Not Started)
+## Phase 5: Dashboard & Polish (Mostly Completed)
 
 | Subtask | Status | Notes |
 |---------|--------|-------|
-| 5.1 Tauri 2 App Skeleton | ⚠️ Partial | Basic Tauri app exists; needs layout, routing, state management |
-| 5.2 Schema Editor UI | ❌ | Not started |
-| 5.3 Data Viewer Component | ❌ | Not started |
-| 5.4 Query Builder UI | ❌ | Not started |
-| 5.5 Replication Dashboard | ❌ | Not started |
+| 5.1 Tauri 2 App Skeleton | ✅ | Window layout with sidebar, Vue Router, Pinia store, theme support |
+| 5.2 Schema Editor UI | ✅ | Schema tree view, table editor, field property panel, raw TOML editor |
+| 5.3 Data Viewer Component | ✅ | Paginated grid with filtering, sorting, inline editing, bulk operations |
+| 5.4 Query Builder UI | ✅ | Visual query builder, join builder, query preview, results display |
+| 5.5 Replication Dashboard | ✅ | Client list, delta monitor, conflict viewer, server controls |
 | 5.6 Integration Testing | ❌ | Not started |
-| 5.7 Performance Profiling | ❌ | Not started |
+| 5.7 Performance Profiling | ✅ | Benchmark dashboard, real-time metrics, CPU/memory charts |
 | 5.8 Documentation | ⚠️ Partial | Inline docs exist; missing user guide, architecture overview |
 | 5.9 Release Packaging | ❌ | Not started |
-| 5.10 Polish & Bug Fixes | ❌ | Not started |
+| 5.10 Polish & Bug Fixes | ⚠️ Partial | Basic UI polish; needs error messages, keyboard shortcuts, loading indicators |
+
+**Note**: Dashboard UI is fully functional with mock data. Integration with actual database commands via Tauri is pending.
 
 ## Test Coverage Progress
 
@@ -130,7 +132,9 @@ A comprehensive test backlog has been created in [tests_backlog.md](./tests_back
 
 ## Next Steps
 
-1. **Integrate with frontend** to build a usable dashboard (Phase 5).
-2. **Polish Phase 3 features** (automatic snapshot scheduling, compaction worker testing, end‑to‑end durability tests).
-3. **Complete Phase 4**: Add integration tests, simulation suite, and dashboard UI for replication monitoring.
-4. **Implement missing tests** from the backlog to increase coverage.
+1. **Complete Phase 5 polish**: Add error messages, keyboard shortcuts, loading indicators, and improve UX.
+2. **Add integration tests** for dashboard workflows (Phase 5.6).
+3. **Polish Phase 3 features** (automatic snapshot scheduling, compaction worker testing, end‑to‑end durability tests).
+4. **Complete Phase 4**: Add integration tests and simulation suite for replication.
+5. **Implement missing tests** from the backlog to increase coverage.
+6. **Update documentation**: Create user guide and architecture overview.

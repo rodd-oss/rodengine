@@ -11,4 +11,4 @@ pub use client_db::ClientDB;
 pub use error::{ClientError, Result};
 
 /// Re‑exports from ecsdb for convenience.
-pub use ecsdb::{Component, ZeroCopyComponent};
+pub use ecsdb::component::{Component, ZeroCopyComponent};
