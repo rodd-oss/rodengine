@@ -3,8 +3,8 @@ import { useAppStore } from '../store'
 
 const appStore = useAppStore()
 
-import { open, save } from '@tauri-apps/api/dialog'
-import { readTextFile, writeTextFile } from '@tauri-apps/api/fs'
+import { open, save } from '@tauri-apps/plugin-dialog'
+import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs'
 
 const openSchemaFile = async () => {
   try {

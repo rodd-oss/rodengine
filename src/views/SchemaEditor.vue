@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue'
 import { useAppStore } from '../store'
-import { open, save } from '@tauri-apps/api/dialog'
-import { readTextFile, writeTextFile } from '@tauri-apps/api/fs'
+import { open, save } from '@tauri-apps/plugin-dialog'
+import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs'
 
 const appStore = useAppStore()
 const schemaInput = ref('')

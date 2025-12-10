@@ -83,7 +83,10 @@ async fn start_replication(state: tauri::State<'_, AppState>) -> Result<(), Stri
     }
     let config = ReplicationConfig::default();
     let mut manager = ReplicationManager::new(config);
-    manager.start().await.map_err(|e| format!("Failed to start replication: {}", e))?;
+    manager
+        .start()
+        .await
+        .map_err(|e| format!("Failed to start replication: {}", e))?;
     *manager_lock = Some(Arc::new(Mutex::new(manager)));
     Ok(())
 }
@@ -94,7 +97,10 @@ async fn stop_replication(state: tauri::State<'_, AppState>) -> Result<(), Strin
     let mut manager_lock = state.replication_manager.lock().await;
     if let Some(manager) = manager_lock.take() {
         let mut manager = manager.lock().await;
-        manager.stop().await.map_err(|e| format!("Failed to stop replication: {}", e))?;
+        manager
+            .stop()
+            .await
+            .map_err(|e| format!("Failed to stop replication: {}", e))?;
     }
     Ok(())
 }
@@ -111,6 +117,8 @@ async fn get_connected_clients(state: tauri::State<'_, AppState>) -> Result<usiz
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .manage(AppState {
             db: Mutex::new(None),

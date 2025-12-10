@@ -25,4 +25,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 ecsdb = { path = "../ecsdb" }
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
 
