@@ -8,12 +8,14 @@ pub mod broadcast;
 pub mod client;
 pub mod conflict;
 pub mod delta_encoder;
+pub mod delta_log;
 pub mod sync;
 
 pub use broadcast::{BroadcastQueue, BroadcastScheduler};
 pub use client::{ClientManager, ClientSession};
 pub use conflict::{ConflictLog, ConflictResolver, ConflictStrategy};
 pub use delta_encoder::{DeltaDecoder, DeltaEncoder, Frame, FrameFlag};
+pub use delta_log::{DeltaLog, DeltaLogEntry};
 pub use sync::{
     FullSyncMessage, FullSyncProtocol, IncrementalSyncMessage, IncrementalSyncProtocol,
 };
@@ -178,6 +180,11 @@ impl ReplicationManager {
     /// Returns the number of pending delta batches in the broadcast queue.
     pub async fn pending_delta_count(&self) -> usize {
         self.broadcast_queue.pending_count().await
+    }
+
+    /// Returns recent delta log entries for monitoring.
+    pub async fn delta_log_entries(&self) -> Vec<DeltaLogEntry> {
+        self.broadcast_queue.delta_log_entries().await
     }
 
     /// Returns a reference to the conflict resolver.

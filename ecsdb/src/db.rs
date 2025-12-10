@@ -839,6 +839,15 @@ impl Database {
         None
     }
 
+    /// Returns the table name for a given table ID, if it exists.
+    pub fn get_table_name_by_id(&self, table_id: u16) -> Option<String> {
+        if let Some(table) = self.tables.get(&table_id) {
+            Some(table.table_name().to_string())
+        } else {
+            None
+        }
+    }
+
     /// Returns the number of entities that have a component in the given table.
     pub fn get_entity_count_for_table(&self, table_id: u16) -> usize {
         if let Some(table) = self.tables.get(&table_id) {

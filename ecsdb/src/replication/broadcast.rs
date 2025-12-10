@@ -4,6 +4,7 @@
 
 use crate::error::Result;
 use crate::replication::client::{ClientManager, ClientMessage};
+use crate::replication::delta_log::{DeltaLog, DeltaLogEntry};
 use crate::storage::delta::{Delta, DeltaOp};
 use std::collections::VecDeque;
 use std::sync::Arc;
@@ -40,6 +41,8 @@ pub struct BroadcastQueue {
     throttle_interval: Duration,
     /// Last broadcast time.
     last_broadcast: Mutex<Option<Instant>>,
+    /// Log of recent deltas for monitoring.
+    delta_log: std::sync::Arc<tokio::sync::Mutex<DeltaLog>>,
 }
 
 impl BroadcastQueue {
@@ -50,6 +53,7 @@ impl BroadcastQueue {
             client_manager: Mutex::new(None),
             throttle_interval: Duration::from_millis(10),
             last_broadcast: Mutex::new(None),
+            delta_log: std::sync::Arc::new(tokio::sync::Mutex::new(DeltaLog::new(1000))),
         }
     }
 
@@ -61,6 +65,11 @@ impl BroadcastQueue {
 
     /// Enqueues a delta for broadcast.
     pub async fn enqueue(&self, delta: Delta) -> Result<()> {
+        // Record delta in log
+        {
+            let mut log = self.delta_log.lock().await;
+            log.record(&delta);
+        }
         let mut queue = self.queue.lock().await;
         // If the delta is small and we have room in the last batch, merge it.
         // For simplicity, we just push the whole delta as a batch.
@@ -125,6 +134,12 @@ impl BroadcastQueue {
     /// Sets the throttle interval.
     pub fn set_throttle_interval(&mut self, interval: Duration) {
         self.throttle_interval = interval;
+    }
+
+    /// Returns a snapshot of recent delta log entries.
+    pub async fn delta_log_entries(&self) -> Vec<DeltaLogEntry> {
+        let log = self.delta_log.lock().await;
+        log.entries().to_vec()
     }
 }
 

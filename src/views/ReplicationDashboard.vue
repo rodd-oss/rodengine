@@ -88,6 +88,7 @@ const updateReplicationData = async () => {
       await appStore.fetchClients()
       await appStore.fetchPendingDeltaCount()
       await appStore.fetchConflictLog()
+      await appStore.fetchDeltaLog()
       clientCount.value = appStore.connectedClients.length
       deltaQueueSize.value = appStore.pendingDeltaCount
     } catch (error) {
@@ -96,6 +97,8 @@ const updateReplicationData = async () => {
   } else {
     clientCount.value = 0
     deltaQueueSize.value = 0
+    // Clear delta stream when server stops
+    appStore.deltaStream = []
   }
 }
 

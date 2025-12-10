@@ -138,16 +138,27 @@ export const useAppStore = defineStore('app', () => {
   const fetchClients = async () => {
     try {
       const clients = await invoke<any[]>('get_clients')
-      console.log('Fetched clients:', clients)
+      console.log('Fetched clients raw:', clients)
       // Map to UI shape
-      connectedClients.value = clients.map(client => ({
-        id: client.id[0], // UUID string from tuple array
-        address: client.addr,
-        version: '1.0.0', // placeholder
-        lastHeartbeat: new Date().toISOString(), // placeholder
-        lag: 0, // placeholder
-        status: client.state.toLowerCase()
-      }))
+      connectedClients.value = clients.map(client => {
+        // Extract ID: ClientId serializes as a tuple array [uuid]
+        let id: string
+        if (Array.isArray(client.id)) {
+          id = client.id[0]
+        } else if (client.id && typeof client.id === 'object' && client.id[0] !== undefined) {
+          id = client.id[0]
+        } else {
+          id = String(client.id)
+        }
+        return {
+          id,
+          address: client.addr,
+          version: '1.0.0', // placeholder
+          lastHeartbeat: new Date().toISOString(), // placeholder
+          lag: 0, // placeholder
+          status: client.state.toLowerCase()
+        }
+      })
     } catch (error) {
       console.error('Failed to fetch clients:', error)
       throw error
@@ -171,13 +182,39 @@ export const useAppStore = defineStore('app', () => {
       conflictLog.value = conflicts.map(conflict => ({
         id: conflict.timestamp, // use timestamp as id
         type: conflict.field_offset !== null ? 'field' : 'row',
-        table: conflict.table_id.toString(), // TODO: map table id to name
+        table: conflict.table_name || conflict.table_id.toString(),
         entityId: conflict.entity_id,
         resolution: 'server-wins', // placeholder
         timestamp: new Date(conflict.timestamp).toISOString()
       }))
     } catch (error) {
       console.error('Failed to fetch conflict log:', error)
+      throw error
+    }
+  }
+
+  const fetchDeltaLog = async () => {
+    try {
+      const entries = await invoke<any[]>('get_delta_log')
+      // Map to UI shape
+      deltaStream.value = entries.map(entry => {
+        // Map operation type to UI class
+        let type = entry.first_op_type
+        if (type === 'create_entity' || type === 'insert') type = 'insert'
+        else if (type === 'delete_entity' || type === 'delete') type = 'delete'
+        else if (type === 'update') type = 'update'
+        else type = 'unknown'
+        return {
+          id: entry.seq,
+          type,
+          table: entry.first_table_id?.toString() || 'unknown',
+          entityId: entry.first_entity_id || 0,
+          timestamp: new Date(entry.timestamp).toISOString(),
+          size: entry.operation_count * 10 // placeholder size
+        }
+      })
+    } catch (error) {
+      console.error('Failed to fetch delta log:', error)
       throw error
     }
   }
@@ -289,7 +326,8 @@ export const useAppStore = defineStore('app', () => {
     fetchConnectedClients,
     fetchClients,
     fetchPendingDeltaCount,
-    fetchConflictLog,
+     fetchConflictLog,
+     fetchDeltaLog,
     createEntity,
     getEntityCount,
     fetchEntities,

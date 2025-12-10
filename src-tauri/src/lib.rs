@@ -3,6 +3,7 @@ use ecsdb::db::Database;
 use ecsdb::replication::{ReplicationConfig, ReplicationManager};
 use ecsdb::replication::client::ClientInfo;
 use ecsdb::replication::conflict::Conflict;
+use ecsdb::replication::DeltaLogEntry;
 use serde_json::{self, Value};
 use std::result::Result;
 use std::sync::Arc;
@@ -246,14 +247,44 @@ async fn get_pending_delta_count(state: tauri::State<'_, AppState>) -> Result<us
     Ok(manager.pending_delta_count().await)
 }
 
-/// Returns the conflict log entries.
+/// Returns the conflict log entries with table names.
 #[tauri::command]
-async fn get_conflict_log(state: tauri::State<'_, AppState>) -> Result<Vec<Conflict>, String> {
+async fn get_conflict_log(state: tauri::State<'_, AppState>) -> Result<serde_json::Value, String> {
     let manager_lock = state.replication_manager.lock().await;
     let manager = manager_lock.as_ref().ok_or("Replication not started")?;
     let manager = manager.lock().await;
     let log = manager.conflict_resolver().log();
-    Ok(log.conflicts().to_vec())
+    
+    // Get database reference for table name mapping
+    let db_lock = state.db.lock().await;
+    let db = db_lock.as_ref();
+    
+    let conflicts: Vec<_> = log.conflicts().iter().map(|conflict| {
+        let table_name = db.and_then(|db| db.get_table_name_by_id(conflict.table_id))
+            .unwrap_or_else(|| conflict.table_id.to_string());
+        serde_json::json!({
+            "table_id": conflict.table_id,
+            "table_name": table_name,
+            "entity_id": conflict.entity_id,
+            "field_offset": conflict.field_offset,
+            "server_value": conflict.server_value,
+            "client_value": conflict.client_value,
+            "server_version": conflict.server_version,
+            "client_version": conflict.client_version,
+            "timestamp": conflict.timestamp,
+        })
+    }).collect();
+    
+    Ok(serde_json::json!(conflicts))
+}
+
+/// Returns recent delta log entries.
+#[tauri::command]
+async fn get_delta_log(state: tauri::State<'_, AppState>) -> Result<Vec<DeltaLogEntry>, String> {
+    let manager_lock = state.replication_manager.lock().await;
+    let manager = manager_lock.as_ref().ok_or("Replication not started")?;
+    let manager = manager.lock().await;
+    Ok(manager.delta_log_entries().await)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -284,7 +315,8 @@ pub fn run() {
             get_connected_clients,
             get_clients,
             get_pending_delta_count,
-            get_conflict_log
+            get_conflict_log,
+            get_delta_log
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
