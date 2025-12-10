@@ -1,24 +1,58 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useAppStore } from '../store'
 
 const appStore = useAppStore()
 const searchQuery = ref('')
 const currentPage = ref(1)
 const itemsPerPage = ref(20)
+const entities = ref<any[]>([])
 
-// Mock data for demonstration
-const mockData = Array.from({ length: 100 }, (_, i) => ({
-  id: i + 1,
-  name: `Entity ${i + 1}`,
-  position: { x: Math.random() * 100, y: Math.random() * 100, z: Math.random() * 100 },
-  health: Math.floor(Math.random() * 100),
-  timestamp: new Date().toISOString()
-}))
+// Load entities when table selected
+watch(() => appStore.selectedTable, async (tableName) => {
+  if (tableName) {
+    await refreshData()
+  }
+})
+
+onMounted(() => {
+  if (appStore.selectedTable) {
+    refreshData()
+  }
+})
+
+const refreshData = async () => {
+  if (!appStore.selectedTable) return
+  // TODO: call Tauri command to fetch entities for selected table
+  console.log('Refresh data for table:', appStore.selectedTable)
+  // For now, keep mock data
+  entities.value = Array.from({ length: 100 }, (_, i) => ({
+    id: i + 1,
+    name: `Entity ${i + 1}`,
+    position: { x: Math.random() * 100, y: Math.random() * 100, z: Math.random() * 100 },
+    health: Math.floor(Math.random() * 100),
+    timestamp: new Date().toISOString()
+  }))
+}
+
+const insertRow = async () => {
+  try {
+    const entityId = await appStore.createEntity()
+    console.log('Created entity with ID:', entityId)
+    await refreshData()
+  } catch (error) {
+    console.error('Failed to create entity:', error)
+  }
+}
+
+const exportCSV = () => {
+  // TODO: implement CSV export
+  console.log('Export CSV')
+}
 
 const filteredData = computed(() => {
-  if (!searchQuery.value) return mockData
-  return mockData.filter(item => 
+  if (!searchQuery.value) return entities.value
+  return entities.value.filter(item => 
     item.name.toLowerCase().includes(searchQuery.value.toLowerCase())
   )
 })
@@ -65,9 +99,9 @@ const columns = [
         </div>
         
         <div class="actions">
-          <button class="btn">Refresh</button>
-          <button class="btn">Export CSV</button>
-          <button class="btn btn-primary">Insert Row</button>
+          <button class="btn" @click="refreshData">Refresh</button>
+          <button class="btn" @click="exportCSV">Export CSV</button>
+          <button class="btn btn-primary" @click="insertRow">Insert Row</button>
         </div>
       </div>
     </div>
@@ -251,6 +285,16 @@ const columns = [
 
 .btn-icon:hover {
   opacity: 1;
+}
+
+.btn-primary {
+  background-color: #396cd8;
+  color: white;
+  border-color: #396cd8;
+}
+
+.btn-primary:hover {
+  background-color: #2c5bc7;
 }
 
 .pagination {

@@ -3,19 +3,55 @@ import { useAppStore } from '../store'
 
 const appStore = useAppStore()
 
+import { open, save } from '@tauri-apps/api/dialog'
+import { readTextFile, writeTextFile } from '@tauri-apps/api/fs'
+
 const openSchemaFile = async () => {
-  // TODO: implement file picker via Tauri
-  console.log('Open schema file')
+  try {
+    const selected = await open({
+      filters: [{ name: 'TOML', extensions: ['toml'] }],
+      title: 'Select Schema File'
+    })
+    if (!selected || Array.isArray(selected)) return
+    const content = await readTextFile(selected)
+    // TODO: pass content to schema editor, maybe via store
+    console.log('Loaded schema file:', selected)
+  } catch (error) {
+    console.error('Failed to open schema file:', error)
+  }
 }
 
 const saveSchemaFile = async () => {
-  // TODO: implement file save via Tauri
-  console.log('Save schema file')
+  try {
+    const filePath = await save({
+      filters: [{ name: 'TOML', extensions: ['toml'] }],
+      title: 'Save Schema File'
+    })
+    if (!filePath) return
+    // TODO: get schema content from store or editor
+    const content = ''
+    await writeTextFile(filePath, content)
+    console.log('Saved schema file:', filePath)
+  } catch (error) {
+    console.error('Failed to save schema file:', error)
+  }
 }
 
 const initDatabase = async () => {
-  // TODO: call Rust command to init database
-  console.log('Initialize database')
+  if (appStore.databaseInitialized) {
+    console.log('Database already initialized')
+    return
+  }
+  try {
+    const selected = await open({
+      filters: [{ name: 'TOML', extensions: ['toml'] }],
+      title: 'Select Schema File to Initialize Database'
+    })
+    if (!selected || Array.isArray(selected)) return
+    await appStore.initDatabase(selected)
+  } catch (error) {
+    console.error('Failed to initialize database:', error)
+  }
 }
 </script>
 

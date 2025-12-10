@@ -1,10 +1,66 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { useAppStore } from '../store'
+import { open, save } from '@tauri-apps/api/dialog'
+import { readTextFile, writeTextFile } from '@tauri-apps/api/fs'
 
 const appStore = useAppStore()
 const schemaInput = ref('')
 const activeTab = ref('tables')
+
+onMounted(async () => {
+  if (appStore.databaseInitialized && appStore.tables.length === 0) {
+    try {
+      await appStore.loadSchema()
+    } catch (error) {
+      console.error('Failed to load schema:', error)
+    }
+  }
+})
+
+watch(() => appStore.databaseInitialized, async (initialized) => {
+  if (initialized && appStore.tables.length === 0) {
+    await appStore.loadSchema()
+  }
+})
+
+const validateSchema = () => {
+  // TODO: implement schema validation
+  console.log('Validate schema')
+}
+
+const loadSchemaFromFile = async () => {
+  try {
+    const selected = await open({
+      filters: [{ name: 'TOML', extensions: ['toml'] }],
+      title: 'Select Schema File'
+    })
+    if (!selected || Array.isArray(selected)) return
+    const content = await readTextFile(selected)
+    schemaInput.value = content
+  } catch (error) {
+    console.error('Failed to load schema file:', error)
+  }
+}
+
+const saveSchemaToFile = async () => {
+  try {
+    const filePath = await save({
+      filters: [{ name: 'TOML', extensions: ['toml'] }],
+      title: 'Save Schema File'
+    })
+    if (!filePath) return
+    await writeTextFile(filePath, schemaInput.value)
+    console.log('Saved schema file:', filePath)
+  } catch (error) {
+    console.error('Failed to save schema file:', error)
+  }
+}
+
+const applySchema = async () => {
+  // TODO: send schema to backend to apply changes
+  console.log('Apply schema changes')
+}
 </script>
 
 <template>
@@ -74,9 +130,10 @@ const activeTab = ref('tables')
         <h3>Raw TOML</h3>
         <textarea v-model="schemaInput" placeholder="Paste TOML schema here..." class="toml-input"></textarea>
         <div class="raw-actions">
-          <button class="btn">Validate</button>
-          <button class="btn">Load Schema</button>
-          <button class="btn">Save Schema</button>
+          <button class="btn" @click="validateSchema">Validate</button>
+          <button class="btn" @click="loadSchemaFromFile">Load Schema</button>
+          <button class="btn" @click="saveSchemaToFile">Save Schema</button>
+          <button class="btn btn-primary" @click="applySchema">Apply Schema</button>
         </div>
       </div>
     </div>
@@ -239,5 +296,15 @@ const activeTab = ref('tables')
 .raw-actions .btn {
   flex: 1;
   padding: 0.5rem;
+}
+
+.raw-actions .btn-primary {
+  background-color: #396cd8;
+  color: white;
+  border-color: #396cd8;
+}
+
+.raw-actions .btn-primary:hover {
+  background-color: #2c5bc7;
 }
 </style>

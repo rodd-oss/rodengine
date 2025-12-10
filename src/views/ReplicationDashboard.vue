@@ -9,14 +9,22 @@ const deltaQueueSize = ref(0)
 const conflicts = ref<any[]>([])
 const syncProgress = ref(0)
 
-const startServer = () => {
-  serverStatus.value = 'running'
-  // TODO: call Rust command to start replication server
+const startServer = async () => {
+  try {
+    await appStore.startReplication()
+    serverStatus.value = 'running'
+  } catch (error) {
+    console.error('Failed to start replication:', error)
+  }
 }
 
-const stopServer = () => {
-  serverStatus.value = 'stopped'
-  // TODO: call Rust command to stop replication server
+const stopServer = async () => {
+  try {
+    await appStore.stopReplication()
+    serverStatus.value = 'stopped'
+  } catch (error) {
+    console.error('Failed to stop replication:', error)
+  }
 }
 
 const addMockClient = () => {
@@ -59,13 +67,26 @@ const addMockConflict = () => {
   }
 }
 
+const updateClientCount = async () => {
+  if (serverStatus.value === 'running') {
+    try {
+      const count = await appStore.fetchConnectedClients()
+      clientCount.value = count
+    } catch (error) {
+      console.error('Failed to fetch client count:', error)
+    }
+  } else {
+    clientCount.value = 0
+  }
+}
+
 let interval: number
 
 onMounted(() => {
   interval = setInterval(() => {
     if (serverStatus.value === 'running') {
-      deltaQueueSize.value = Math.floor(Math.random() * 100)
-      clientCount.value = appStore.connectedClients.length
+      deltaQueueSize.value = Math.floor(Math.random() * 100) // TODO: replace with real delta queue size
+      updateClientCount()
     }
   }, 1000)
 })
@@ -111,7 +132,7 @@ onUnmounted(() => {
       <div class="stat-card">
         <div class="stat-icon">👥</div>
         <div class="stat-content">
-          <div class="stat-value">{{ appStore.connectedClients.length }}</div>
+          <div class="stat-value">{{ clientCount }}</div>
           <div class="stat-label">Connected Clients</div>
         </div>
       </div>

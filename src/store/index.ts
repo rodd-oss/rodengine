@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import { invoke } from '@tauri-apps/api/core'
 
 export const useAppStore = defineStore('app', () => {
   // Schema state
@@ -68,6 +69,80 @@ export const useAppStore = defineStore('app', () => {
     return 0
   })
   
+  // Actions that call Tauri commands
+  const initDatabase = async (schemaPath: string) => {
+    try {
+      const version = await invoke<number>('init_database', { schemaPath })
+      setDatabaseInitialized(true, schemaPath)
+      // Load schema after initialization
+      await loadSchema()
+      return version
+    } catch (error) {
+      console.error('Failed to initialize database:', error)
+      throw error
+    }
+  }
+
+  const loadSchema = async () => {
+    try {
+      const schema = await invoke<any>('get_schema')
+      setCurrentSchema(schema)
+    } catch (error) {
+      console.error('Failed to load schema:', error)
+      throw error
+    }
+  }
+
+  const loadTables = async () => {
+    try {
+      const tablesList = await invoke<string[]>('get_tables')
+      tables.value = tablesList.map(name => ({ name, fields: [] }))
+    } catch (error) {
+      console.error('Failed to load tables:', error)
+      throw error
+    }
+  }
+
+  const startReplication = async () => {
+    try {
+      await invoke('start_replication')
+    } catch (error) {
+      console.error('Failed to start replication:', error)
+      throw error
+    }
+  }
+
+  const stopReplication = async () => {
+    try {
+      await invoke('stop_replication')
+    } catch (error) {
+      console.error('Failed to stop replication:', error)
+      throw error
+    }
+  }
+
+  const fetchConnectedClients = async () => {
+    try {
+      const count = await invoke<number>('get_connected_clients')
+      // Update store? We have connectedClients array, but count only.
+      // We'll just return count for now.
+      return count
+    } catch (error) {
+      console.error('Failed to fetch connected clients:', error)
+      throw error
+    }
+  }
+
+  const createEntity = async () => {
+    try {
+      const entityId = await invoke<number>('create_entity')
+      return entityId
+    } catch (error) {
+      console.error('Failed to create entity:', error)
+      throw error
+    }
+  }
+
   return {
     // State
     currentSchema,
@@ -88,6 +163,13 @@ export const useAppStore = defineStore('app', () => {
     setDatabaseInitialized,
     addConnectedClient,
     addDelta,
+    initDatabase,
+    loadSchema,
+    loadTables,
+    startReplication,
+    stopReplication,
+    fetchConnectedClients,
+    createEntity,
     
     // Getters
     selectedTableSchema,
