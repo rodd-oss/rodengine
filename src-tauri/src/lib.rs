@@ -74,6 +74,118 @@ async fn get_tables(state: tauri::State<'_, AppState>) -> Result<Vec<String>, St
     Ok(table_names)
 }
 
+/// Returns the number of entities in a given table.
+#[tauri::command]
+async fn get_entity_count(
+    table_name: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<usize, String> {
+    let db_lock = state.db.lock().await;
+    let db = db_lock
+        .as_ref()
+        .ok_or("Database not initialized. Call init_database first.")?;
+    let table_id = db
+        .get_table_id_by_name(&table_name)
+        .ok_or_else(|| format!("Table '{}' not found", table_name))?;
+    Ok(db.get_entity_count_for_table(table_id))
+}
+
+/// Returns entity data for a given table with pagination.
+#[tauri::command]
+async fn fetch_entities(
+    table_name: String,
+    limit: usize,
+    offset: usize,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<(u64, Vec<u8>)>, String> {
+    let db_lock = state.db.lock().await;
+    let db = db_lock
+        .as_ref()
+        .ok_or("Database not initialized. Call init_database first.")?;
+    let table_id = db
+        .get_table_id_by_name(&table_name)
+        .ok_or_else(|| format!("Table '{}' not found", table_name))?;
+    db.get_entities_for_table(table_id, limit, offset)
+        .map_err(|e| format!("Failed to fetch entities: {}", e))
+}
+
+/// Returns entity data as JSON for a given table with pagination.
+#[tauri::command]
+async fn fetch_entities_json(
+    table_name: String,
+    limit: usize,
+    offset: usize,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<(u64, Value)>, String> {
+    let db_lock = state.db.lock().await;
+    let db = db_lock
+        .as_ref()
+        .ok_or("Database not initialized. Call init_database first.")?;
+    db.get_entities_json_for_table(&table_name, limit, offset)
+        .map_err(|e| format!("Failed to fetch entities: {}", e))
+}
+
+/// Insert component data from JSON.
+#[tauri::command]
+async fn insert_component(
+    table_name: String,
+    entity_id: u64,
+    json: Value,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let db_lock = state.db.lock().await;
+    let db = db_lock
+        .as_ref()
+        .ok_or("Database not initialized. Call init_database first.")?;
+    db.insert_from_json(&table_name, entity_id, json)
+        .map_err(|e| format!("Failed to insert component: {}", e))?;
+    Ok(())
+}
+
+/// Update component data from JSON.
+#[tauri::command]
+async fn update_component(
+    table_name: String,
+    entity_id: u64,
+    json: Value,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let db_lock = state.db.lock().await;
+    let db = db_lock
+        .as_ref()
+        .ok_or("Database not initialized. Call init_database first.")?;
+    db.update_from_json(&table_name, entity_id, json)
+        .map_err(|e| format!("Failed to update component: {}", e))?;
+    Ok(())
+}
+
+/// Delete component for a given entity and table.
+#[tauri::command]
+async fn delete_component(
+    table_name: String,
+    entity_id: u64,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let db_lock = state.db.lock().await;
+    let db = db_lock
+        .as_ref()
+        .ok_or("Database not initialized. Call init_database first.")?;
+    db.delete_by_table(&table_name, entity_id)
+        .map_err(|e| format!("Failed to delete component: {}", e))?;
+    Ok(())
+}
+
+/// Commit pending writes to make them visible.
+#[tauri::command]
+async fn commit_database(state: tauri::State<'_, AppState>) -> Result<u64, String> {
+    let db_lock = state.db.lock().await;
+    let db = db_lock
+        .as_ref()
+        .ok_or("Database not initialized. Call init_database first.")?;
+    db.commit()
+        .map_err(|e| format!("Failed to commit: {}", e))
+}
+
 /// Starts the replication server with default configuration.
 #[tauri::command]
 async fn start_replication(state: tauri::State<'_, AppState>) -> Result<(), String> {
@@ -130,6 +242,13 @@ pub fn run() {
             create_entity,
             get_schema,
             get_tables,
+            get_entity_count,
+            fetch_entities,
+            fetch_entities_json,
+            insert_component,
+            update_component,
+            delete_component,
+            commit_database,
             start_replication,
             stop_replication,
             get_connected_clients

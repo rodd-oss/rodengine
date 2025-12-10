@@ -1,6 +1,7 @@
 use crate::component::{Component, ZeroCopyComponent};
 use crate::entity::{archetype::ArchetypeRegistry, EntityId, EntityRegistry};
 use crate::error::{EcsDbError, Result};
+use crate::json;
 use crate::replication::ReplicationManager;
 use crate::schema::{parser::SchemaParser, types::FieldDefinition, DatabaseSchema};
 use crate::storage::delta::DeltaTracker;
@@ -9,6 +10,7 @@ use crate::storage::table::ComponentTable;
 use crate::transaction::{WriteOpWithoutResponse, WriteQueue};
 use dashmap::DashMap;
 use log;
+use serde_json;
 
 use std::sync::Arc;
 
@@ -38,8 +40,6 @@ pub struct Database {
     /// Optional replication manager for multi‑client sync.
     replication_manager: Option<Arc<ReplicationManager>>,
 }
-
-/// Trait for type-erased component table operations.
 pub trait TableHandle {
     /// Insert component data for an entity.
     fn insert(&mut self, entity_id: u64, data: Vec<u8>) -> Result<()>;
@@ -829,6 +829,152 @@ impl Database {
         self.tables.len()
     }
 
+    /// Returns the table ID for a given table name, if it exists.
+    pub fn get_table_id_by_name(&self, table_name: &str) -> Option<u16> {
+        for entry in self.tables.iter() {
+            if entry.value().table_name() == table_name {
+                return Some(*entry.key());
+            }
+        }
+        None
+    }
+
+    /// Returns the number of entities that have a component in the given table.
+    pub fn get_entity_count_for_table(&self, table_id: u16) -> usize {
+        if let Some(table) = self.tables.get(&table_id) {
+            table.entity_mapping().len()
+        } else {
+            0
+        }
+    }
+
+    /// Returns a list of entity IDs and their component data for a given table, with pagination.
+    /// Returns (entity_id, serialized component data) pairs.
+    pub fn get_entities_for_table(
+        &self,
+        table_id: u16,
+        limit: usize,
+        offset: usize,
+    ) -> Result<Vec<(u64, Vec<u8>)>> {
+        let table = self
+            .tables
+            .get(&table_id)
+            .ok_or_else(|| EcsDbError::SchemaError(format!("Table {} not found", table_id)))?;
+
+        let mapping = table.entity_mapping();
+        let total = mapping.len();
+        let start = offset.min(total);
+        let end = (offset + limit).min(total);
+
+        let mut results = Vec::with_capacity(end - start);
+        for &(entity_id, _) in &mapping[start..end] {
+            let data = table.get(entity_id)?;
+            results.push((entity_id, data));
+        }
+        Ok(results)
+    }
+
+    /// Returns a list of entity IDs and their component data as JSON for a given table, with pagination.
+    /// Returns (entity_id, JSON value) pairs.
+    pub fn get_entities_json_for_table(
+        &self,
+        table_name: &str,
+        limit: usize,
+        offset: usize,
+    ) -> Result<Vec<(u64, serde_json::Value)>> {
+        let table_id = self
+            .get_table_id_by_name(table_name)
+            .ok_or_else(|| EcsDbError::SchemaError(format!("Table '{}' not found", table_name)))?;
+        let table_def = self.schema.find_table(table_name).ok_or_else(|| {
+            EcsDbError::SchemaError(format!("Table '{}' not found in schema", table_name))
+        })?;
+
+        // Compute layout for this table
+        let layout = compute_record_layout(&table_def.fields, &self.schema.custom_types)?;
+
+        // Get raw entity data
+        let raw_data = self.get_entities_for_table(table_id, limit, offset)?;
+
+        // Convert each component to JSON
+        let mut results = Vec::with_capacity(raw_data.len());
+        for (entity_id, bytes) in raw_data {
+            let json = json::component_bytes_to_json_with_layout(
+                &bytes,
+                &table_def.fields,
+                &layout,
+                &self.schema.custom_types,
+            )?;
+            results.push((entity_id, json));
+        }
+        Ok(results)
+    }
+
+    /// Insert component data from JSON for a given entity.
+    pub fn insert_from_json(
+        &self,
+        table_name: &str,
+        entity_id: u64,
+        json: serde_json::Value,
+    ) -> Result<()> {
+        let table_id = self
+            .get_table_id_by_name(table_name)
+            .ok_or_else(|| EcsDbError::SchemaError(format!("Table '{}' not found", table_name)))?;
+        let table_def = self.schema.find_table(table_name).ok_or_else(|| {
+            EcsDbError::SchemaError(format!("Table '{}' not found in schema", table_name))
+        })?;
+
+        // Compute layout for this table
+        let layout = compute_record_layout(&table_def.fields, &self.schema.custom_types)?;
+
+        // Convert JSON to bytes
+        let bytes = json::json_to_component_bytes_with_layout(
+            &json,
+            &table_def.fields,
+            &layout,
+            &self.schema.custom_types,
+        )?;
+
+        // Insert via write queue
+        self.write_queue.insert(table_id, entity_id, bytes)?;
+        Ok(())
+    }
+
+    /// Update component data from JSON for a given entity.
+    pub fn update_from_json(
+        &self,
+        table_name: &str,
+        entity_id: u64,
+        json: serde_json::Value,
+    ) -> Result<()> {
+        let table_id = self
+            .get_table_id_by_name(table_name)
+            .ok_or_else(|| EcsDbError::SchemaError(format!("Table '{}' not found", table_name)))?;
+        let table_def = self.schema.find_table(table_name).ok_or_else(|| {
+            EcsDbError::SchemaError(format!("Table '{}' not found in schema", table_name))
+        })?;
+
+        let layout = compute_record_layout(&table_def.fields, &self.schema.custom_types)?;
+
+        let bytes = json::json_to_component_bytes_with_layout(
+            &json,
+            &table_def.fields,
+            &layout,
+            &self.schema.custom_types,
+        )?;
+
+        self.write_queue.update(table_id, entity_id, bytes)?;
+        Ok(())
+    }
+
+    /// Delete component for a given entity and table.
+    pub fn delete_by_table(&self, table_name: &str, entity_id: u64) -> Result<()> {
+        let table_id = self
+            .get_table_id_by_name(table_name)
+            .ok_or_else(|| EcsDbError::SchemaError(format!("Table '{}' not found", table_name)))?;
+        self.write_queue.delete(table_id, entity_id)?;
+        Ok(())
+    }
+
     /// Returns a reference to the database schema.
     pub fn schema(&self) -> &Arc<DatabaseSchema> {
         &self.schema
@@ -915,7 +1061,6 @@ impl Database {
         Ok(db)
     }
 }
-
 /// Type-erased wrapper around ComponentTable<T>.
 struct TableHandleImpl<T: Component + ZeroCopyComponent> {
     table: ComponentTable<T>,
@@ -1154,6 +1299,17 @@ mod tests {
         // Retrieve component
         let retrieved = db.get::<TestComponent>(entity_id.0)?;
         assert_eq!(retrieved, comp);
+
+        // Test JSON conversion
+        let json_data = db.get_entities_json_for_table("test_component", 10, 0)?;
+        assert_eq!(json_data.len(), 1);
+        let (retrieved_entity_id, json_value) = &json_data[0];
+        assert_eq!(*retrieved_entity_id, entity_id.0);
+        assert!(json_value.is_object());
+        let obj = json_value.as_object().unwrap();
+        assert_eq!(obj["x"].as_f64().unwrap(), 1.0);
+        assert_eq!(obj["y"].as_f64().unwrap(), 2.0);
+        assert_eq!(obj["id"].as_u64().unwrap(), 42);
 
         Ok(())
     }

@@ -5,7 +5,7 @@
 
 use crate::error::{EcsDbError, Result};
 use crate::replication::client::{ClientId, ClientManager, ClientMessage, ClientState};
-use crate::storage::delta::{Delta, DeltaOp};
+use crate::storage::delta::Delta;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::sync::Arc;
@@ -55,14 +55,14 @@ pub struct FullSyncProtocol {
     /// Maximum chunk size in bytes.
     max_chunk_size: usize,
     /// Compression level for snapshot (0 = none).
-    compression_level: i32,
+    _compression_level: i32,
 }
 
 impl Default for FullSyncProtocol {
     fn default() -> Self {
         Self {
             max_chunk_size: 1024 * 1024, // 1 MB
-            compression_level: 3,
+            _compression_level: 3,
         }
     }
 }
@@ -150,7 +150,7 @@ impl FullSyncProtocol {
 /// Incremental sync protocol implementation.
 pub struct IncrementalSyncProtocol {
     /// Maximum number of deltas per batch.
-    max_deltas_per_batch: usize,
+    _max_deltas_per_batch: usize,
     /// Delta archive for catch‑up (stores recent deltas).
     delta_archive: Mutex<VecDeque<Delta>>,
     /// Maximum archive size (number of deltas).
@@ -160,7 +160,7 @@ pub struct IncrementalSyncProtocol {
 impl Default for IncrementalSyncProtocol {
     fn default() -> Self {
         Self {
-            max_deltas_per_batch: 100,
+            _max_deltas_per_batch: 100,
             delta_archive: Mutex::new(VecDeque::with_capacity(1000)),
             max_archive_size: 1000,
         }
@@ -211,7 +211,7 @@ impl IncrementalSyncProtocol {
         to_version: u64,
     ) -> Result<()> {
         if let Some(msg) = self.create_incremental_sync(from_version, to_version).await {
-            let bytes = bincode::serialize(&msg)?;
+            let _bytes = bincode::serialize(&msg)?;
             if let Some(client) = client_manager.get_client(client_id).await {
                 client.send(ClientMessage::Delta(Delta {
                     ops: vec![], // placeholder, we'll send raw bytes
@@ -261,23 +261,23 @@ impl IncrementalSyncProtocol {
 
 /// Heartbeat and keepalive mechanism.
 pub struct HeartbeatManager {
-    interval_secs: u64,
-    timeout_secs: u64,
+    _interval_secs: u64,
+    _timeout_secs: u64,
 }
 
 impl HeartbeatManager {
     pub fn new(interval_secs: u64, timeout_secs: u64) -> Self {
         Self {
-            interval_secs,
-            timeout_secs,
+            _interval_secs: interval_secs,
+            _timeout_secs: timeout_secs,
         }
     }
 
     /// Starts heartbeat task for a client.
     pub async fn start_for_client(
         &self,
-        client_manager: Arc<ClientManager>,
-        client_id: ClientId,
+        _client_manager: Arc<ClientManager>,
+        _client_id: ClientId,
     ) -> Result<()> {
         // TODO: spawn task that periodically sends ping and checks for timeout.
         Ok(())

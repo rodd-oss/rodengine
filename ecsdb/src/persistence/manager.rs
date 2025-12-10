@@ -5,7 +5,7 @@ use crate::db::Database;
 use crate::error::{EcsDbError, Result};
 use crate::persistence::file_wal::FileWal;
 use crate::persistence::snapshot::DatabaseSnapshot;
-use crate::transaction::wal::{WalEntry, WalOp};
+use crate::transaction::wal::WalOp;
 use crate::transaction::WriteOpWithoutResponse;
 use std::collections::HashMap;
 use std::fs;
@@ -187,7 +187,7 @@ impl PersistenceManager {
         committed_transactions.sort_by_key(|(tid, _)| *tid);
 
         // Apply all committed operations directly to the database (bypass write queue)
-        for (transaction_id, ops) in committed_transactions {
+        for (_transaction_id, ops) in committed_transactions {
             for op in ops {
                 self.apply_wal_op_to_db(op, db)?;
             }
@@ -211,7 +211,6 @@ impl PersistenceManager {
 
     /// Applies a single WAL operation directly to the database (bypassing write queue).
     fn apply_wal_op_to_db(&self, op: WalOp, db: &mut Database) -> Result<()> {
-        use crate::transaction::WriteOpWithoutResponse;
         let write_op = match op {
             WalOp::Insert {
                 table_id,

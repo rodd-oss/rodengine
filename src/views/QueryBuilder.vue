@@ -102,16 +102,14 @@ const exportQuery = () => {
           <div class="section">
             <h4>WHERE</h4>
             <div v-for="(cond, index) in whereConditions" :key="index" class="condition">
-              <select v-model="cond.field" class="field-select">
-                <option value="">Select field</option>
-                <option v-for="table in tables" :key="table.name">
-                  <optgroup :label="table.name">
-                    <option v-for="field in table.fields" :key="field" :value="`${table.name}.${field}`">
-                      {{ table.name }}.{{ field }}
-                    </option>
-                  </optgroup>
-                </option>
-              </select>
+               <select v-model="cond.field" class="field-select">
+                 <option value="">Select field</option>
+                 <optgroup v-for="table in tables" :key="table.name" :label="table.name">
+                   <option v-for="field in table.fields" :key="field" :value="`${table.name}.${field}`">
+                     {{ table.name }}.{{ field }}
+                   </option>
+                 </optgroup>
+               </select>
               
               <select v-model="cond.operator" class="operator-select">
                 <option v-for="op in operators" :key="op" :value="op">{{ op }}</option>

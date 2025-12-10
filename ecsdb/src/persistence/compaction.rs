@@ -4,10 +4,9 @@ use crate::error::{EcsDbError, Result};
 use crate::persistence::file_wal::FileWal;
 use crate::persistence::snapshot::DatabaseSnapshot;
 use crate::transaction::wal::WalOp;
-use std::collections::BTreeMap;
+
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Compaction worker that periodically merges old snapshots with WAL files.
 pub struct CompactionWorker {
@@ -213,8 +212,8 @@ impl CompactionWorker {
 pub fn compact_offline(
     snapshot_dir: &Path,
     wal_dir: &Path,
-    output_path: &Path,
-    compress: bool,
+    _output_path: &Path,
+    _compress: bool,
 ) -> Result<()> {
     // Implementation similar to run_compaction_cycle but merges everything.
     // For simplicity, we'll just call the worker's method after creating a dummy config.
@@ -224,7 +223,7 @@ pub fn compact_offline(
         archive_dir: wal_dir.join("archive"),
         ..Default::default()
     };
-    let mut worker = CompactionWorker::new(config);
+    let _worker = CompactionWorker::new(config);
     // We cannot easily reuse run_compaction_cycle because it expects versioned snapshots.
     // Instead, we'll implement a simpler merge-all.
     // For now, placeholder.

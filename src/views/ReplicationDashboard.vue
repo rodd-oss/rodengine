@@ -8,22 +8,34 @@ const clientCount = ref(0)
 const deltaQueueSize = ref(0)
 const conflicts = ref<any[]>([])
 const syncProgress = ref(0)
+const serverLoading = ref(false)
+const serverError = ref('')
 
 const startServer = async () => {
+  serverLoading.value = true
+  serverError.value = ''
   try {
     await appStore.startReplication()
     serverStatus.value = 'running'
   } catch (error) {
     console.error('Failed to start replication:', error)
+    serverError.value = error instanceof Error ? error.message : String(error)
+  } finally {
+    serverLoading.value = false
   }
 }
 
 const stopServer = async () => {
+  serverLoading.value = true
+  serverError.value = ''
   try {
     await appStore.stopReplication()
     serverStatus.value = 'stopped'
   } catch (error) {
     console.error('Failed to stop replication:', error)
+    serverError.value = error instanceof Error ? error.message : String(error)
+  } finally {
+    serverLoading.value = false
   }
 }
 
@@ -101,13 +113,14 @@ onUnmounted(() => {
     <div class="dashboard-header">
       <h2>Replication Dashboard</h2>
       <div class="server-controls">
-        <button 
-          class="btn" 
-          :class="{ 'btn-success': serverStatus === 'running', 'btn-danger': serverStatus === 'stopped' }"
-          @click="serverStatus === 'stopped' ? startServer() : stopServer()"
-        >
-          {{ serverStatus === 'stopped' ? 'Start Server' : 'Stop Server' }}
-        </button>
+         <button 
+           class="btn" 
+           :class="{ 'btn-success': serverStatus === 'running', 'btn-danger': serverStatus === 'stopped' }"
+           @click="serverStatus === 'stopped' ? startServer() : stopServer()"
+           :disabled="serverLoading"
+         >
+           {{ serverStatus === 'stopped' ? (serverLoading ? 'Starting...' : 'Start Server') : (serverLoading ? 'Stopping...' : 'Stop Server') }}
+         </button>
         <button class="btn" @click="addMockClient">
           Add Test Client
         </button>
@@ -117,10 +130,16 @@ onUnmounted(() => {
         <button class="btn" @click="addMockConflict">
           Simulate Conflict
         </button>
-      </div>
-    </div>
-    
-    <div class="stats-grid">
+       </div>
+       <div v-if="serverError" class="server-error">
+         {{ serverError }}
+       </div>
+       <div v-if="serverLoading" class="server-loading">
+         {{ serverStatus === 'stopped' ? 'Starting...' : 'Stopping...' }}
+       </div>
+     </div>
+     
+     <div class="stats-grid">
       <div class="stat-card">
         <div class="stat-icon">🔄</div>
         <div class="stat-content">
@@ -249,6 +268,22 @@ onUnmounted(() => {
   display: flex;
   gap: 0.5rem;
   flex-wrap: wrap;
+}
+
+.server-error {
+  padding: 1rem;
+  border: 1px solid #ef4444;
+  border-radius: 4px;
+  background-color: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+  margin-top: 0.5rem;
+}
+
+.server-loading {
+  padding: 1rem;
+  text-align: center;
+  color: var(--text-secondary);
+  margin-top: 0.5rem;
 }
 
 .btn-success {

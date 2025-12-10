@@ -2,7 +2,7 @@
 //!
 //! Manages outbound delta batches, flow control, and reliable delivery.
 
-use crate::error::{EcsDbError, Result};
+use crate::error::Result;
 use crate::replication::client::{ClientManager, ClientMessage};
 use crate::storage::delta::{Delta, DeltaOp};
 use std::collections::VecDeque;
@@ -33,7 +33,7 @@ pub struct BroadcastQueue {
     /// Pending delta batches waiting to be sent.
     queue: Mutex<VecDeque<DeltaBatch>>,
     /// Maximum batch size (number of operations).
-    batch_size: usize,
+    _batch_size: usize,
     /// Client manager for sending.
     client_manager: Mutex<Option<Arc<ClientManager>>>,
     /// Minimum interval between broadcasts (for throttling).
@@ -46,7 +46,7 @@ impl BroadcastQueue {
     pub fn new(batch_size: usize) -> Self {
         Self {
             queue: Mutex::new(VecDeque::new()),
-            batch_size,
+            _batch_size: batch_size,
             client_manager: Mutex::new(None),
             throttle_interval: Duration::from_millis(10),
             last_broadcast: Mutex::new(None),

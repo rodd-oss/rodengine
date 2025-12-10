@@ -143,6 +143,73 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
+  const getEntityCount = async (tableName: string) => {
+    try {
+      const count = await invoke<number>('get_entity_count', { tableName })
+      return count
+    } catch (error) {
+      console.error('Failed to get entity count:', error)
+      throw error
+    }
+  }
+
+  const fetchEntities = async (tableName: string, limit: number, offset: number) => {
+    try {
+      const entities = await invoke<[number, number[]][]>('fetch_entities', { tableName, limit, offset })
+      return entities
+    } catch (error) {
+      console.error('Failed to fetch entities:', error)
+      throw error
+    }
+  }
+
+  const fetchEntitiesJson = async (tableName: string, limit: number, offset: number) => {
+    try {
+      const entities = await invoke<[number, any][]>('fetch_entities_json', { tableName, limit, offset })
+      return entities
+    } catch (error) {
+      console.error('Failed to fetch entities as JSON:', error)
+      throw error
+    }
+    }
+
+  const insertComponent = async (tableName: string, entityId: number, data: any) => {
+    try {
+      await invoke('insert_component', { tableName, entityId, json: data })
+    } catch (error) {
+      console.error('Failed to insert component:', error)
+      throw error
+    }
+  }
+
+  const updateComponent = async (tableName: string, entityId: number, data: any) => {
+    try {
+      await invoke('update_component', { tableName, entityId, json: data })
+    } catch (error) {
+      console.error('Failed to update component:', error)
+      throw error
+    }
+  }
+
+  const deleteComponent = async (tableName: string, entityId: number) => {
+    try {
+      await invoke('delete_component', { tableName, entityId })
+    } catch (error) {
+      console.error('Failed to delete component:', error)
+      throw error
+    }
+  }
+
+  const commitDatabase = async () => {
+    try {
+      const version = await invoke<number>('commit_database')
+      return version
+    } catch (error) {
+      console.error('Failed to commit database:', error)
+      throw error
+    }
+  }
+  
   return {
     // State
     currentSchema,
@@ -170,6 +237,13 @@ export const useAppStore = defineStore('app', () => {
     stopReplication,
     fetchConnectedClients,
     createEntity,
+    getEntityCount,
+    fetchEntities,
+    fetchEntitiesJson,
+    insertComponent,
+    updateComponent,
+    deleteComponent,
+    commitDatabase,
     
     // Getters
     selectedTableSchema,

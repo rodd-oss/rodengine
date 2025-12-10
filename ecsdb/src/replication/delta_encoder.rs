@@ -4,7 +4,7 @@
 //! Supports optional zstd compression.
 
 use crate::error::{EcsDbError, Result};
-use crate::storage::delta::{Delta, DeltaOp};
+use crate::storage::delta::Delta;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use crc32fast::Hasher;
 
@@ -31,6 +31,7 @@ impl FrameFlag {
         self as u8
     }
 
+    #[allow(dead_code)]
     fn from_bits(bits: u8) -> Vec<Self> {
         let mut flags = Vec::new();
         if bits & Self::Compressed.to_bits() != 0 {
@@ -103,7 +104,7 @@ impl Frame {
         }
         let flags = bytes.get_u8();
         let payload_len = bytes.get_u32() as usize;
-        let total_len_expected = 4 + 1 + 1 + 4 + payload_len + 4;
+        let _total_len_expected = 4 + 1 + 1 + 4 + payload_len + 4;
         if bytes.len() < payload_len + 4 {
             return Err(EcsDbError::ReplicationError("Incomplete frame".to_string()));
         }
@@ -118,7 +119,9 @@ impl Frame {
         hasher.update(&payload);
         let checksum_computed = hasher.finalize();
         if checksum_received != checksum_computed {
-            return Err(EcsDbError::ReplicationError("Checksum mismatch".to_string()));
+            return Err(EcsDbError::ReplicationError(
+                "Checksum mismatch".to_string(),
+            ));
         }
 
         Ok(Self {
@@ -165,8 +168,8 @@ impl DeltaEncoder {
     /// Encodes a delta into a network frame, optionally compressed.
     pub fn encode(delta: &Delta, compress: bool) -> Result<Frame> {
         let payload = delta.serialize()?;
-        let mut flags = FrameFlag::Delta.to_bits();
-        let mut payload_bytes = Bytes::from(payload);
+        let flags = FrameFlag::Delta.to_bits();
+        let payload_bytes = Bytes::from(payload);
         let mut frame = Frame::new(flags, payload_bytes);
         if compress {
             frame.compress(3)?; // default compression level 3
@@ -188,7 +191,8 @@ pub type DeltaDecoder = DeltaEncoder;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::delta::{Delta, DeltaOp};
+    use crate::storage::delta::Delta;
+    use crate::storage::delta::DeltaOp;
 
     #[test]
     fn test_frame_encode_decode() -> Result<()> {

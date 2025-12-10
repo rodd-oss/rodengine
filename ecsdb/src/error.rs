@@ -27,6 +27,9 @@ pub enum EcsDbError {
     #[error("Serialization error: {0}")]
     SerializationError(#[from] bincode::Error),
 
+    #[error("JSON conversion error: {0}")]
+    JsonError(String),
+
     #[error("Field type mismatch: expected {expected}, got {got}")]
     FieldTypeMismatch { expected: String, got: String },
 

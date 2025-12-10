@@ -5,6 +5,7 @@ use tokio::net::TcpStream;
 
 /// Network client that maintains a connection to the server.
 pub struct SyncClient {
+    #[allow(dead_code)]
     stream: TcpStream,
 }
 

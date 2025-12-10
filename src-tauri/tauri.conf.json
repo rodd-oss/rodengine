@@ -5,7 +5,7 @@
   "identifier": "com.milanrodd.rodengine",
   "build": {
     "beforeDevCommand": "bun run dev",
-    "devUrl": "http://localhost:1420",
+    "devUrl": "http://localhost:1421",
     "beforeBuildCommand": "bun run build",
     "frontendDist": "../dist"
   },

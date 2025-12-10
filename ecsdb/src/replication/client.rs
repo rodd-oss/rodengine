@@ -96,7 +96,7 @@ impl ClientSession {
     pub async fn close(&mut self) {
         if let Some(socket) = self.socket.take() {
             let mut guard = socket.write().await;
-            let _ = (&mut *guard).shutdown().await;
+            let _ = (*guard).shutdown().await;
         }
     }
 }
@@ -199,10 +199,10 @@ impl ClientManager {
 /// Starts a TCP listener that accepts new clients and adds them to the manager.
 pub async fn start_tcp_listener(addr: &str, client_manager: Arc<ClientManager>) -> Result<()> {
     let listener = TcpListener::bind(addr).await.map_err(|e| {
-        EcsDbError::IoError(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("Failed to bind to {}: {}", addr, e),
-        ))
+        EcsDbError::IoError(std::io::Error::other(format!(
+            "Failed to bind to {}: {}",
+            addr, e
+        )))
     })?;
 
     log::info!("Replication TCP listener started on {}", addr);

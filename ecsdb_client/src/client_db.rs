@@ -20,6 +20,7 @@ pub struct ClientDB {
     /// Current database version (last applied delta version).
     version: Arc<RwLock<u64>>,
     /// Network client for communicating with server.
+    #[allow(dead_code)]
     network_client: Option<Arc<NetworkClient>>,
 }
 
@@ -45,7 +46,7 @@ impl ClientDB {
     }
 
     /// Connects to a remote server and performs initial sync.
-    pub async fn connect(&mut self, addr: &str) -> Result<()> {
+    pub async fn connect(&mut self, _addr: &str) -> Result<()> {
         // TODO: establish TCP connection, authenticate, receive schema and snapshot.
         Ok(())
     }
@@ -139,5 +140,11 @@ impl ClientDB {
     /// Returns the schema (available after initial sync).
     pub fn schema(&self) -> &Arc<ecsdb::schema::DatabaseSchema> {
         &self.schema
+    }
+}
+
+impl Default for ClientDB {
+    fn default() -> Self {
+        Self::new()
     }
 }

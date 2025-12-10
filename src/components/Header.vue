@@ -13,7 +13,7 @@ const openSchemaFile = async () => {
       title: 'Select Schema File'
     })
     if (!selected || Array.isArray(selected)) return
-    const content = await readTextFile(selected)
+    await readTextFile(selected) // Read schema content (currently unused)
     // TODO: pass content to schema editor, maybe via store
     console.log('Loaded schema file:', selected)
   } catch (error) {
@@ -29,8 +29,7 @@ const saveSchemaFile = async () => {
     })
     if (!filePath) return
     // TODO: get schema content from store or editor
-    const content = ''
-    await writeTextFile(filePath, content)
+    await writeTextFile(filePath, '')
     console.log('Saved schema file:', filePath)
   } catch (error) {
     console.error('Failed to save schema file:', error)

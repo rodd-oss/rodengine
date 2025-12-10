@@ -72,8 +72,8 @@ pub struct ReplicationManager {
     client_manager: Arc<ClientManager>,
     broadcast_queue: Arc<BroadcastQueue>,
     conflict_resolver: conflict::ConflictResolver,
-    full_sync: FullSyncProtocol,
-    incremental_sync: IncrementalSyncProtocol,
+    _full_sync: FullSyncProtocol,
+    _incremental_sync: IncrementalSyncProtocol,
     /// Shutdown signal sender.
     shutdown_tx: watch::Sender<bool>,
     /// Background tasks.
@@ -89,8 +89,8 @@ impl ReplicationManager {
         // We need mutable access; we'll store broadcast_queue as mutable later.
         // For now, we'll set after creation using a setter.
         let conflict_resolver = conflict::ConflictResolver::new(config.conflict_strategy);
-        let full_sync = FullSyncProtocol::default();
-        let incremental_sync = IncrementalSyncProtocol::default();
+        let _full_sync = FullSyncProtocol::default();
+        let _incremental_sync = IncrementalSyncProtocol::default();
         let (shutdown_tx, _) = watch::channel(false);
 
         Self {
@@ -98,8 +98,8 @@ impl ReplicationManager {
             client_manager,
             broadcast_queue,
             conflict_resolver,
-            full_sync,
-            incremental_sync,
+            _full_sync,
+            _incremental_sync,
             shutdown_tx,
             tasks: Vec::new(),
         }
@@ -108,8 +108,8 @@ impl ReplicationManager {
     /// Starts listening for client connections (TCP and optionally WebSocket).
     pub async fn start(&mut self) -> Result<()> {
         // Set client manager in broadcast queue (requires mutability)
-        let mut queue = Arc::get_mut(&mut self.broadcast_queue).unwrap();
-        queue.set_client_manager(self.client_manager.clone());
+        let queue = Arc::get_mut(&mut self.broadcast_queue).unwrap();
+        queue.set_client_manager(self.client_manager.clone()).await;
 
         // Start TCP listener
         let listener_addr = self.config.listen_addr.clone();
@@ -182,10 +182,10 @@ impl ReplicationManager {
         mut shutdown_rx: watch::Receiver<bool>,
     ) -> Result<()> {
         let listener = tokio::net::TcpListener::bind(addr).await.map_err(|e| {
-            EcsDbError::IoError(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("Failed to bind to {}: {}", addr, e),
-            ))
+            EcsDbError::IoError(std::io::Error::other(format!(
+                "Failed to bind to {}: {}",
+                addr, e
+            )))
         })?;
 
         log::info!("Replication TCP listener started on {}", addr);

@@ -7,6 +7,8 @@ import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs'
 const appStore = useAppStore()
 const schemaInput = ref('')
 const activeTab = ref('tables')
+const schemaError = ref('')
+const schemaLoading = ref(false)
 
 onMounted(async () => {
   if (appStore.databaseInitialized && appStore.tables.length === 0) {
@@ -58,8 +60,23 @@ const saveSchemaToFile = async () => {
 }
 
 const applySchema = async () => {
-  // TODO: send schema to backend to apply changes
-  console.log('Apply schema changes')
+  schemaError.value = ''
+  schemaLoading.value = true
+  try {
+    // Write schema to temporary file
+    const timestamp = Date.now()
+    const tempPath = `schema_${timestamp}.toml`
+    await writeTextFile(tempPath, schemaInput.value)
+    // Initialize database with this schema file
+    await appStore.initDatabase(tempPath)
+    // Load schema after initialization
+    await appStore.loadSchema()
+  } catch (error) {
+    console.error('Failed to apply schema:', error)
+    schemaError.value = error instanceof Error ? error.message : String(error)
+  } finally {
+    schemaLoading.value = false
+  }
 }
 </script>
 
@@ -129,12 +146,20 @@ const applySchema = async () => {
       <div class="schema-raw">
         <h3>Raw TOML</h3>
         <textarea v-model="schemaInput" placeholder="Paste TOML schema here..." class="toml-input"></textarea>
-        <div class="raw-actions">
-          <button class="btn" @click="validateSchema">Validate</button>
-          <button class="btn" @click="loadSchemaFromFile">Load Schema</button>
-          <button class="btn" @click="saveSchemaToFile">Save Schema</button>
-          <button class="btn btn-primary" @click="applySchema">Apply Schema</button>
-        </div>
+         <div class="raw-actions">
+           <button class="btn" @click="validateSchema">Validate</button>
+           <button class="btn" @click="loadSchemaFromFile">Load Schema</button>
+           <button class="btn" @click="saveSchemaToFile">Save Schema</button>
+           <button class="btn btn-primary" @click="applySchema" :disabled="schemaLoading">
+             {{ schemaLoading ? 'Applying...' : 'Apply Schema' }}
+           </button>
+         </div>
+         <div v-if="schemaError" class="schema-error">
+           {{ schemaError }}
+         </div>
+         <div v-if="schemaLoading" class="schema-loading">
+           Loading...
+         </div>
       </div>
     </div>
   </div>
@@ -304,7 +329,23 @@ const applySchema = async () => {
   border-color: #396cd8;
 }
 
-.raw-actions .btn-primary:hover {
-  background-color: #2c5bc7;
-}
+ .raw-actions .btn-primary:hover {
+   background-color: #2c5bc7;
+ }
+
+ .schema-error {
+   padding: 1rem;
+   border: 1px solid #ef4444;
+   border-radius: 4px;
+   background-color: rgba(239, 68, 68, 0.1);
+   color: #ef4444;
+   margin-top: 1rem;
+ }
+
+ .schema-loading {
+   padding: 1rem;
+   text-align: center;
+   color: var(--text-secondary);
+   margin-top: 1rem;
+ }
 </style>

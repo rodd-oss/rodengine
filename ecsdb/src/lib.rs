@@ -3,6 +3,7 @@ pub mod config;
 pub mod db;
 pub mod entity;
 pub mod error;
+pub mod json;
 pub mod persistence;
 pub mod replication;
 pub mod schema;

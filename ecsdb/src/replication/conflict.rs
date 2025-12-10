@@ -66,6 +66,7 @@ pub struct ConflictResolver {
     strategy: ConflictStrategy,
     log: ConflictLog,
     /// Custom merge function (boxed closure).
+    #[allow(clippy::type_complexity)]
     custom_merge: Option<Arc<dyn Fn(Conflict) -> Result<Vec<u8>> + Send + Sync>>,
 }
 
