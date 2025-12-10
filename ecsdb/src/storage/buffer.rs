@@ -412,7 +412,7 @@ mod tests {
         // Write buffer has data, but read buffer not yet committed
         let read_data = buffer.read(offset, 8)?;
         assert_eq!(read_data, vec![0u8; 8]); // read buffer still zeroed
-        // Commit
+                                             // Commit
         buffer.commit();
         // Now read buffer should have data
         let read_data = buffer.read(offset, 8)?;

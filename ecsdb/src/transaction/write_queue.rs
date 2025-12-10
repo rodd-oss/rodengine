@@ -527,9 +527,7 @@ mod tests {
             } else {
                 Ok(())
             };
-            recorded.push(MockOp {
-                op: op.clone(),
-            });
+            recorded.push(MockOp { op: op.clone() });
             result
         }
 
@@ -541,15 +539,18 @@ mod tests {
                 Ok(())
             };
             for op in ops {
-                recorded.push(MockOp {
-                    op: op.clone(),
-                });
+                recorded.push(MockOp { op: op.clone() });
             }
             result
         }
 
         fn recorded_ops(&self) -> Vec<WriteOpWithoutResponse> {
-            self.recorded.lock().unwrap().iter().map(|m| m.op.clone()).collect()
+            self.recorded
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|m| m.op.clone())
+                .collect()
         }
 
         fn set_force_error(&self, _err: EcsDbError) {
@@ -580,7 +581,11 @@ mod tests {
         let ops = processor.recorded_ops();
         assert_eq!(ops.len(), 1);
         match &ops[0] {
-            WriteOpWithoutResponse::Insert { table_id, entity_id, data } => {
+            WriteOpWithoutResponse::Insert {
+                table_id,
+                entity_id,
+                data,
+            } => {
                 assert_eq!(*table_id, 1);
                 assert_eq!(*entity_id, 100);
                 assert_eq!(data, &vec![1, 2, 3]);
@@ -602,7 +607,11 @@ mod tests {
         let ops = processor.recorded_ops();
         assert_eq!(ops.len(), 1);
         match &ops[0] {
-            WriteOpWithoutResponse::Update { table_id, entity_id, data } => {
+            WriteOpWithoutResponse::Update {
+                table_id,
+                entity_id,
+                data,
+            } => {
                 assert_eq!(*table_id, 2);
                 assert_eq!(*entity_id, 200);
                 assert_eq!(data, &vec![4, 5, 6]);
@@ -624,7 +633,10 @@ mod tests {
         let ops = processor.recorded_ops();
         assert_eq!(ops.len(), 1);
         match &ops[0] {
-            WriteOpWithoutResponse::Delete { table_id, entity_id } => {
+            WriteOpWithoutResponse::Delete {
+                table_id,
+                entity_id,
+            } => {
                 assert_eq!(*table_id, 3);
                 assert_eq!(*entity_id, 300);
             }
@@ -680,13 +692,11 @@ mod tests {
                 move |ops| p.process_batch(ops)
             },
         );
-        let ops = vec![
-            WriteOpWithoutResponse::Insert {
-                table_id: 1,
-                entity_id: 100,
-                data: vec![1],
-            },
-        ];
+        let ops = vec![WriteOpWithoutResponse::Insert {
+            table_id: 1,
+            entity_id: 100,
+            data: vec![1],
+        }];
         let result = queue.commit_batch(124, ops);
         assert!(result.is_err());
         // Even though error, the operations were recorded (since we record before processing)

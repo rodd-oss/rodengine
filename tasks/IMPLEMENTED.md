@@ -1,6 +1,6 @@
 # Implemented Tasks
 
-*Last Updated: 2025-12-09*
+*Last Updated: 2025-12-10*
 
 ## Current Build Status
 
@@ -76,19 +76,19 @@
 | 3.7 Integration with Database API | ✅ | `Database::open_with_persistence` loads snapshot and replays WAL; `apply_write_op` for WAL replay; version management. |
 | 3.8 End‑to‑End Durability Tests | ✅ | Crash simulation, power‑loss, and long‑running tests added (currently ignored due to snapshot recovery bug). |
 
-## Phase 4: Replication (Not Started)
+## Phase 4: Replication (Mostly Completed)
 
 | Subtask | Status | Notes |
 |---------|--------|-------|
-| 4.1 Client Connection Management | ❌ | Not started |
-| 4.2 Delta Serialization Format | ❌ | Not started |
-| 4.3 Network Broadcast Mechanism | ❌ | Not started |
-| 4.4 Conflict Resolution | ❌ | Not started |
-| 4.5 Full‑Sync Protocol | ❌ | Not started |
-| 4.6 Incremental Sync | ❌ | Not started |
-| 4.7 Client Library | ❌ | Not started |
+| 4.1 Client Connection Management | ✅ | TCP listener, client session, authentication stub, client manager |
+| 4.2 Delta Serialization Format | ✅ | Binary frame with magic, version, flags, checksum, optional zstd compression |
+| 4.3 Network Broadcast Mechanism | ✅ | Broadcast queue with batching, throttling, background scheduler |
+| 4.4 Conflict Resolution | ✅ | Server‑authoritative, last‑write‑wins, custom merge strategies, conflict log |
+| 4.5 Full‑Sync Protocol | ✅ | Chunked snapshot transfer, progress reporting, schema + snapshot |
+| 4.6 Incremental Sync | ✅ | Delta archive, version‑based catch‑up, heartbeat manager |
+| 4.7 Client Library | ✅ | `ecsdb_client` crate with `ClientDB`, delta application, in‑memory storage |
 | 4.8 Integration with Dashboard | ❌ | Not started |
-| 4.9 Testing & Simulation | ❌ | Not started |
+| 4.9 Testing & Simulation | ⚠️ | Basic unit tests exist; missing integration and simulation tests |
 
 ## Phase 5: Dashboard & Polish (Not Started)
 
@@ -130,7 +130,7 @@ A comprehensive test backlog has been created in [tests_backlog.md](./tests_back
 
 ## Next Steps
 
-1. **Integrate with frontend** to build a usable dashboard.
+1. **Integrate with frontend** to build a usable dashboard (Phase 5).
 2. **Polish Phase 3 features** (automatic snapshot scheduling, compaction worker testing, end‑to‑end durability tests).
-3. **Start Phase 4: Replication** (client connection management, delta serialization, network broadcast, conflict resolution, full‑sync protocol, incremental sync, client library, dashboard integration, testing).
+3. **Complete Phase 4**: Add integration tests, simulation suite, and dashboard UI for replication monitoring.
 4. **Implement missing tests** from the backlog to increase coverage.

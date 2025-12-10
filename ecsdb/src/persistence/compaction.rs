@@ -1,12 +1,12 @@
 //! Compaction worker for merging snapshots and WAL files.
 
 use crate::error::{EcsDbError, Result};
-use crate::persistence::snapshot::DatabaseSnapshot;
 use crate::persistence::file_wal::FileWal;
+use crate::persistence::snapshot::DatabaseSnapshot;
 use crate::transaction::wal::WalOp;
-use std::path::{Path, PathBuf};
-use std::fs;
 use std::collections::BTreeMap;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Compaction worker that periodically merges old snapshots with WAL files.
@@ -30,7 +30,7 @@ impl CompactionWorker {
     /// are moved to the archive directory (or deleted if archiving is disabled).
     pub fn run_compaction_cycle(&mut self) -> Result<()> {
         eprintln!("Starting compaction cycle");
-        
+
         // 1. List snapshot files
         let snapshots = Self::list_snapshot_files(&self.config.snapshot_dir)?;
         if snapshots.len() < 2 {
@@ -51,7 +51,10 @@ impl CompactionWorker {
             .collect();
 
         if relevant_wal_files.is_empty() {
-            eprintln!("No WAL files to compact for snapshot version {}", oldest_version);
+            eprintln!(
+                "No WAL files to compact for snapshot version {}",
+                oldest_version
+            );
             return Ok(());
         }
 
@@ -65,9 +68,12 @@ impl CompactionWorker {
 
         // 6. Save merged snapshot with a new version (use next_version?)
         let merged_version = next_version; // we'll keep the next snapshot's version as merged
-        let merged_path = self.config.snapshot_dir.join(format!("snapshot_{:016x}.bin", merged_version));
+        let merged_path = self
+            .config
+            .snapshot_dir
+            .join(format!("snapshot_{:016x}.bin", merged_version));
         snapshot.write_to_file(&merged_path, self.config.compress_snapshots)?;
-         eprintln!("Saved merged snapshot to {:?}", merged_path);
+        eprintln!("Saved merged snapshot to {:?}", merged_path);
 
         // 7. Move old snapshot and WAL files to archive (or delete)
         if self.config.compress_archived_wal {
@@ -88,7 +94,7 @@ impl CompactionWorker {
             }
         }
 
-         eprintln!("Compaction cycle completed successfully");
+        eprintln!("Compaction cycle completed successfully");
         Ok(())
     }
 
@@ -137,7 +143,10 @@ impl CompactionWorker {
     }
 
     /// Replays all entries from a single WAL file onto a snapshot.
-    fn replay_wal_file_onto_snapshot(wal_path: &Path, snapshot: &mut DatabaseSnapshot) -> Result<()> {
+    fn replay_wal_file_onto_snapshot(
+        wal_path: &Path,
+        snapshot: &mut DatabaseSnapshot,
+    ) -> Result<()> {
         let entries = FileWal::read_all_entries(wal_path)?;
         // Group operations by transaction, apply only committed transactions
         use std::collections::HashMap;
@@ -157,7 +166,10 @@ impl CompactionWorker {
                 }
                 op => {
                     // Insert, Update, Delete: accumulate per transaction
-                    pending_ops.entry(entry.transaction_id).or_default().push(op);
+                    pending_ops
+                        .entry(entry.transaction_id)
+                        .or_default()
+                        .push(op);
                 }
             }
         }
@@ -184,7 +196,7 @@ impl CompactionWorker {
         while self.running {
             sleep(interval).await;
             if let Err(e) = self.run_compaction_cycle() {
-                 eprintln!("Compaction cycle failed: {}", e);
+                eprintln!("Compaction cycle failed: {}", e);
             }
         }
         Ok(())
@@ -198,7 +210,12 @@ impl CompactionWorker {
 
 /// Offline compaction utility: merges all snapshots and WAL files into a single snapshot.
 /// This is useful for manual maintenance and reduces disk space.
-pub fn compact_offline(snapshot_dir: &Path, wal_dir: &Path, output_path: &Path, compress: bool) -> Result<()> {
+pub fn compact_offline(
+    snapshot_dir: &Path,
+    wal_dir: &Path,
+    output_path: &Path,
+    compress: bool,
+) -> Result<()> {
     // Implementation similar to run_compaction_cycle but merges everything.
     // For simplicity, we'll just call the worker's method after creating a dummy config.
     let config = crate::config::PersistenceConfig {
@@ -211,5 +228,7 @@ pub fn compact_offline(snapshot_dir: &Path, wal_dir: &Path, output_path: &Path, 
     // We cannot easily reuse run_compaction_cycle because it expects versioned snapshots.
     // Instead, we'll implement a simpler merge-all.
     // For now, placeholder.
-    Err(EcsDbError::CompactionError("Offline compaction not yet implemented".into()))
+    Err(EcsDbError::CompactionError(
+        "Offline compaction not yet implemented".into(),
+    ))
 }

@@ -1,7 +1,7 @@
 //! Write-ahead logging for durability.
 
 use crate::error::Result;
-use crate::transaction::wal::{WalEntry, WalOp, WalLogger};
+use crate::transaction::wal::{WalEntry, WalLogger, WalOp};
 use async_trait::async_trait;
 
 /// Trait for write-ahead log implementations.
@@ -11,7 +11,12 @@ pub trait Wal: Send + Sync {
     fn begin_transaction(&mut self) -> u64;
 
     /// Logs an operation as part of a transaction.
-    async fn log_operation(&mut self, transaction_id: u64, sequence: u32, operation: WalOp) -> Result<()>;
+    async fn log_operation(
+        &mut self,
+        transaction_id: u64,
+        sequence: u32,
+        operation: WalOp,
+    ) -> Result<()>;
 
     /// Logs a commit marker for a transaction.
     async fn log_commit(&mut self, transaction_id: u64) -> Result<()>;
@@ -59,7 +64,12 @@ impl Wal for InMemoryWal {
         id
     }
 
-    async fn log_operation(&mut self, transaction_id: u64, sequence: u32, operation: WalOp) -> Result<()> {
+    async fn log_operation(
+        &mut self,
+        transaction_id: u64,
+        sequence: u32,
+        operation: WalOp,
+    ) -> Result<()> {
         let entry = WalEntry::new(transaction_id, sequence, operation);
         self.entries.push(entry);
         Ok(())
@@ -124,7 +134,12 @@ impl Wal for WalLogger {
         WalLogger::begin_transaction(self)
     }
 
-    async fn log_operation(&mut self, transaction_id: u64, sequence: u32, operation: WalOp) -> Result<()> {
+    async fn log_operation(
+        &mut self,
+        transaction_id: u64,
+        sequence: u32,
+        operation: WalOp,
+    ) -> Result<()> {
         WalLogger::log_operation(self, transaction_id, sequence, operation)
     }
 

@@ -2,6 +2,7 @@
 members = [
     "src-tauri",
     "ecsdb",
+    "ecsdb_client",
 ]
 resolver = "2"
 
@@ -14,11 +15,12 @@ bincode = "1"
 thiserror = "1"
 dashmap = "5"
 parking_lot = "0.12"
-uuid = { version = "1", features = ["v4"] }
+uuid = { version = "1", features = ["v4", "serde"] }
 zstd = "0.13"
 bytes = "1"
 crc32fast = "1"
 async-trait = "0.1"
+log = "0.4"
 
 [workspace.package]
 version = "0.1.0"

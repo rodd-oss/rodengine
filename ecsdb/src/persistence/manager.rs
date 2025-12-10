@@ -60,7 +60,10 @@ impl PersistenceManager {
     pub fn take_snapshot(&self, db: &Database) -> Result<()> {
         let snapshot = db.create_snapshot()?;
         let version = snapshot.version;
-        let filename = self.config.snapshot_dir.join(format!("snapshot_{:016x}.bin", version));
+        let filename = self
+            .config
+            .snapshot_dir
+            .join(format!("snapshot_{:016x}.bin", version));
         snapshot.write_to_file(&filename, self.config.compress_snapshots)?;
         eprintln!("Snapshot written to {:?}", filename);
         // Prune old snapshots if we exceed keep_snapshots
@@ -171,7 +174,10 @@ impl PersistenceManager {
                     }
                     op => {
                         // Insert, Update, Delete: accumulate per transaction
-                        pending_ops.entry(entry.transaction_id).or_default().push(op);
+                        pending_ops
+                            .entry(entry.transaction_id)
+                            .or_default()
+                            .push(op);
                     }
                 }
             }
@@ -207,17 +213,28 @@ impl PersistenceManager {
     fn apply_wal_op_to_db(&self, op: WalOp, db: &mut Database) -> Result<()> {
         use crate::transaction::WriteOpWithoutResponse;
         let write_op = match op {
-            WalOp::Insert { table_id, entity_id, data } => WriteOpWithoutResponse::Insert {
+            WalOp::Insert {
+                table_id,
+                entity_id,
+                data,
+            } => WriteOpWithoutResponse::Insert {
                 table_id,
                 entity_id,
                 data,
             },
-            WalOp::Update { table_id, entity_id, data } => WriteOpWithoutResponse::Update {
+            WalOp::Update {
+                table_id,
+                entity_id,
+                data,
+            } => WriteOpWithoutResponse::Update {
                 table_id,
                 entity_id,
                 data,
             },
-            WalOp::Delete { table_id, entity_id } => WriteOpWithoutResponse::Delete {
+            WalOp::Delete {
+                table_id,
+                entity_id,
+            } => WriteOpWithoutResponse::Delete {
                 table_id,
                 entity_id,
             },
@@ -230,11 +247,11 @@ impl PersistenceManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::schema::{FieldType, TableDefinition, DatabaseSchema, FieldDefinition};
     use crate::component::{Component, ZeroCopyComponent};
     use crate::persistence::file_wal::FileWal;
     use crate::persistence::wal::Wal;
-    use serde::{Serialize, Deserialize};
+    use crate::schema::{DatabaseSchema, FieldDefinition, FieldType, TableDefinition};
+    use serde::{Deserialize, Serialize};
     use std::fs;
     use tempfile::tempdir;
 
@@ -314,7 +331,11 @@ mod tests {
 
         // Create entity and insert component
         let entity_id = db.create_entity()?.0;
-        let comp = TestComponent { x: 1.0, y: 2.0, id: 42 };
+        let comp = TestComponent {
+            x: 1.0,
+            y: 2.0,
+            id: 42,
+        };
         db.insert(entity_id, &comp)?;
         db.commit()?;
 
@@ -324,7 +345,11 @@ mod tests {
 
         // Create another component after snapshot (should be in WAL)
         let entity_id2 = db.create_entity()?.0;
-        let comp2 = TestComponent { x: 3.0, y: 4.0, id: 43 };
+        let comp2 = TestComponent {
+            x: 3.0,
+            y: 4.0,
+            id: 43,
+        };
         db.insert(entity_id2, &comp2)?;
         db.commit()?;
 
@@ -393,7 +418,11 @@ mod tests {
 
         // Create entity and insert component, commit to establish base state
         let entity_id = db.create_entity()?.0;
-        let comp = TestComponent { x: 1.0, y: 2.0, id: 42 };
+        let comp = TestComponent {
+            x: 1.0,
+            y: 2.0,
+            id: 42,
+        };
         db.insert(entity_id, &comp)?;
         db.commit()?;
 
@@ -411,7 +440,11 @@ mod tests {
             crate::transaction::wal::WalOp::Insert {
                 table_id: TestComponent::TABLE_ID,
                 entity_id: 999, // new entity ID not yet created
-                data: crate::storage::field_codec::encode(&TestComponent { x: 5.0, y: 6.0, id: 99 })?,
+                data: crate::storage::field_codec::encode(&TestComponent {
+                    x: 5.0,
+                    y: 6.0,
+                    id: 99,
+                })?,
             },
         )
         .await?;
@@ -488,7 +521,11 @@ mod tests {
         let db = Database::from_schema(schema)?;
         db.register_component::<TestComponent>()?;
         let entity_id = db.create_entity()?.0;
-        let comp = TestComponent { x: 1.0, y: 2.0, id: 42 };
+        let comp = TestComponent {
+            x: 1.0,
+            y: 2.0,
+            id: 42,
+        };
         db.insert(entity_id, &comp)?;
         db.commit()?;
 
@@ -505,7 +542,11 @@ mod tests {
             crate::transaction::wal::WalOp::Insert {
                 table_id: TestComponent::TABLE_ID,
                 entity_id: 999,
-                data: crate::storage::field_codec::encode(&TestComponent { x: 5.0, y: 6.0, id: 99 })?,
+                data: crate::storage::field_codec::encode(&TestComponent {
+                    x: 5.0,
+                    y: 6.0,
+                    id: 99,
+                })?,
             },
         )
         .await?;

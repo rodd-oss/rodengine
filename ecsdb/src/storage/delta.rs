@@ -162,9 +162,14 @@ mod tests {
             data: vec![1, 2, 3],
         };
         let bytes = bincode::serialize(&op).map_err(EcsDbError::SerializationError)?;
-        let decoded: DeltaOp = bincode::deserialize(&bytes).map_err(EcsDbError::SerializationError)?;
+        let decoded: DeltaOp =
+            bincode::deserialize(&bytes).map_err(EcsDbError::SerializationError)?;
         match decoded {
-            DeltaOp::Insert { table_id, entity_id, data } => {
+            DeltaOp::Insert {
+                table_id,
+                entity_id,
+                data,
+            } => {
                 assert_eq!(table_id, 1);
                 assert_eq!(entity_id, 100);
                 assert_eq!(data, vec![1, 2, 3]);
@@ -199,7 +204,11 @@ mod tests {
         assert_eq!(delta.timestamp, 1000);
         assert_eq!(delta.ops.len(), 1);
         match &delta.ops[0] {
-            DeltaOp::Insert { table_id, entity_id, data } => {
+            DeltaOp::Insert {
+                table_id,
+                entity_id,
+                data,
+            } => {
                 assert_eq!(*table_id, 3);
                 assert_eq!(*entity_id, 300);
                 assert_eq!(data, &vec![7, 8, 9]);
@@ -215,7 +224,13 @@ mod tests {
         let delta = tracker.take_delta();
         assert_eq!(delta.ops.len(), 1);
         match &delta.ops[0] {
-            DeltaOp::Update { table_id, entity_id, field_offset, old_data, new_data } => {
+            DeltaOp::Update {
+                table_id,
+                entity_id,
+                field_offset,
+                old_data,
+                new_data,
+            } => {
                 assert_eq!(*table_id, 4);
                 assert_eq!(*entity_id, 400);
                 assert_eq!(*field_offset, 0);
@@ -233,7 +248,11 @@ mod tests {
         let delta = tracker.take_delta();
         assert_eq!(delta.ops.len(), 1);
         match &delta.ops[0] {
-            DeltaOp::Delete { table_id, entity_id, old_data } => {
+            DeltaOp::Delete {
+                table_id,
+                entity_id,
+                old_data,
+            } => {
                 assert_eq!(*table_id, 5);
                 assert_eq!(*entity_id, 500);
                 assert_eq!(old_data, &vec![10, 11]);

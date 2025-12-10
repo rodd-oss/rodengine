@@ -56,6 +56,9 @@ pub enum EcsDbError {
 
     #[error("Compaction error: {0}")]
     CompactionError(String),
+
+    #[error("Replication error: {0}")]
+    ReplicationError(String),
 }
 
 impl From<JoinError> for EcsDbError {

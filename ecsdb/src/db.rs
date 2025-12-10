@@ -1,12 +1,14 @@
 use crate::component::{Component, ZeroCopyComponent};
 use crate::entity::{archetype::ArchetypeRegistry, EntityId, EntityRegistry};
 use crate::error::{EcsDbError, Result};
+use crate::replication::ReplicationManager;
 use crate::schema::{parser::SchemaParser, types::FieldDefinition, DatabaseSchema};
 use crate::storage::delta::DeltaTracker;
 use crate::storage::layout::{compute_record_layout, RecordLayout};
 use crate::storage::table::ComponentTable;
 use crate::transaction::{WriteOpWithoutResponse, WriteQueue};
 use dashmap::DashMap;
+use log;
 
 use std::sync::Arc;
 
@@ -32,6 +34,9 @@ pub struct Database {
 
     /// Current database version (incremented on each commit)
     version: Arc<std::sync::atomic::AtomicU64>,
+
+    /// Optional replication manager for multi‑client sync.
+    replication_manager: Option<Arc<ReplicationManager>>,
 }
 
 /// Trait for type-erased component table operations.
@@ -129,6 +134,23 @@ impl Database {
         use crate::persistence::manager::PersistenceManager;
         let manager = PersistenceManager::new(config);
         manager.recover()
+    }
+
+    /// Enables replication with the given configuration.
+    /// This starts listening for client connections and begins broadcasting deltas.
+    pub async fn enable_replication(
+        &mut self,
+        config: crate::replication::ReplicationConfig,
+    ) -> Result<()> {
+        let mut manager = crate::replication::ReplicationManager::new(config);
+        manager.start().await?;
+        self.replication_manager = Some(std::sync::Arc::new(manager));
+        Ok(())
+    }
+
+    /// Returns a reference to the replication manager, if enabled.
+    pub fn replication_manager(&self) -> Option<&Arc<ReplicationManager>> {
+        self.replication_manager.as_ref()
     }
 
     /// Creates a new database from an existing schema.
@@ -435,6 +457,7 @@ impl Database {
             write_queue,
             pending_ops: parking_lot::RwLock::new(Vec::new()),
             version: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            replication_manager: None,
         })
     }
 
@@ -452,7 +475,11 @@ impl Database {
                 let data = data.clone();
 
                 // Referential integrity: ensure entity exists
-                if !self.entity_registry.read().contains_entity(crate::entity::EntityId(entity_id)) {
+                if !self
+                    .entity_registry
+                    .read()
+                    .contains_entity(crate::entity::EntityId(entity_id))
+                {
                     return Err(crate::error::EcsDbError::EntityNotFound(entity_id));
                 }
 
@@ -473,7 +500,9 @@ impl Database {
                     Some(mut table) => {
                         let result = table.insert(entity_id, data);
                         if result.is_ok() {
-                            self.archetype_registry.write().add_component(entity_id, table_id);
+                            self.archetype_registry
+                                .write()
+                                .add_component(entity_id, table_id);
                         }
                         result
                     }
@@ -493,7 +522,11 @@ impl Database {
                 let data = data.clone();
 
                 // Referential integrity: ensure entity exists
-                if !self.entity_registry.read().contains_entity(crate::entity::EntityId(entity_id)) {
+                if !self
+                    .entity_registry
+                    .read()
+                    .contains_entity(crate::entity::EntityId(entity_id))
+                {
                     return Err(crate::error::EcsDbError::EntityNotFound(entity_id));
                 }
 
@@ -528,7 +561,9 @@ impl Database {
                     Some(mut table) => {
                         let result = table.delete(entity_id);
                         if result.is_ok() {
-                            self.archetype_registry.write().remove_component(entity_id, table_id);
+                            self.archetype_registry
+                                .write()
+                                .remove_component(entity_id, table_id);
                         }
                         result
                     }
@@ -742,16 +777,24 @@ impl Database {
         self.version
             .store(new_version, std::sync::atomic::Ordering::Release);
 
-        // TODO: store or broadcast delta
+        // Broadcast delta to replication clients (if enabled)
         let delta = delta_tracker.take_delta();
         if !delta.is_empty() {
-            // For now, just log (in production, send to replication)
             #[cfg(debug_assertions)]
             println!(
                 "Delta generated for version {}: {} ops",
                 new_version,
                 delta.ops.len()
             );
+            if let Some(rm) = &self.replication_manager {
+                let delta_clone = delta.clone();
+                let rm = rm.clone();
+                tokio::spawn(async move {
+                    if let Err(e) = rm.broadcast_delta(delta_clone).await {
+                        log::error!("Failed to broadcast delta: {}", e);
+                    }
+                });
+            }
         }
 
         Ok(new_version)
@@ -777,7 +820,8 @@ impl Database {
 
     /// Sets the database version (used during recovery).
     pub(crate) fn set_version(&self, new_version: u64) {
-        self.version.store(new_version, std::sync::atomic::Ordering::Release);
+        self.version
+            .store(new_version, std::sync::atomic::Ordering::Release);
     }
 
     /// Returns the number of component tables.
@@ -866,7 +910,8 @@ impl Database {
         *db.entity_registry.write() = snapshot.entity_registry;
         *db.archetype_registry.write() = snapshot.archetype_registry;
         // Set database version to snapshot version
-        db.version.store(snapshot.version, std::sync::atomic::Ordering::SeqCst);
+        db.version
+            .store(snapshot.version, std::sync::atomic::Ordering::SeqCst);
         Ok(db)
     }
 }

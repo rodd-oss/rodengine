@@ -2,12 +2,11 @@
 
 use crate::error::{EcsDbError, Result};
 use crate::transaction::wal::{WalEntry, WalOp};
+use async_trait::async_trait;
 use bincode;
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use async_trait::async_trait;
-
 
 /// Magic number for WAL files: "ECSWAL\x00\x00" in ASCII
 const WAL_MAGIC: [u8; 8] = *b"ECSWAL\x00\x00";
@@ -106,7 +105,7 @@ impl FileWal {
 
         // Find the latest WAL file to continue from, or start a new one.
         let (current_file_id, existing_files) = Self::scan_existing_files(dir)?;
-        
+
         // Load all existing entries from WAL files
         let entries = Self::read_entries_from_files(&existing_files)?;
         let next_transaction_id = entries
@@ -204,7 +203,9 @@ impl FileWal {
     /// Ensures the current file is open; if not, creates a new one.
     fn ensure_file_open(&mut self) -> Result<()> {
         if self.current_file.is_none() {
-            let filename = self.dir.join(format!("wal_{:04}.wal", self.current_file_id));
+            let filename = self
+                .dir
+                .join(format!("wal_{:04}.wal", self.current_file_id));
             let file = OpenOptions::new()
                 .create(true)
                 .append(true)
@@ -262,10 +263,9 @@ impl FileWal {
 
     /// Returns the path to the current WAL file.
     pub fn current_file_path(&self) -> PathBuf {
-        self.dir.join(format!("wal_{:04}.wal", self.current_file_id))
+        self.dir
+            .join(format!("wal_{:04}.wal", self.current_file_id))
     }
-
-
 
     /// Clears the WAL (deletes all files). Use with caution.
     pub fn clear(&mut self) -> Result<()> {
@@ -298,7 +298,12 @@ impl crate::persistence::wal::Wal for FileWal {
         id
     }
 
-    async fn log_operation(&mut self, transaction_id: u64, sequence: u32, operation: WalOp) -> Result<()> {
+    async fn log_operation(
+        &mut self,
+        transaction_id: u64,
+        sequence: u32,
+        operation: WalOp,
+    ) -> Result<()> {
         let entry = WalEntry::new(transaction_id, sequence, operation);
         self.append_entry(&entry)
     }

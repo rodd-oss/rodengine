@@ -131,7 +131,8 @@ impl DatabaseSnapshot {
             let compressed = spawn_blocking(move || {
                 zstd::encode_all(snapshot_bytes.as_slice(), 3)
                     .map_err(|e| crate::error::EcsDbError::CompressionError(e.to_string()))
-            }).await??;
+            })
+            .await??;
             (FLAG_COMPRESSED, compressed)
         } else {
             (0, snapshot_bytes)
@@ -200,7 +201,8 @@ impl DatabaseSnapshot {
             spawn_blocking(move || {
                 zstd::decode_all(&data[..])
                     .map_err(|e| crate::error::EcsDbError::CompressionError(e.to_string()))
-            }).await??
+            })
+            .await??
         } else {
             data
         };
@@ -217,11 +219,17 @@ impl DatabaseSnapshot {
     /// Applies a single WAL operation to the snapshot (used during compaction/recovery).
     pub fn apply_wal_op(&mut self, op: &crate::transaction::wal::WalOp) -> Result<()> {
         match op {
-            crate::transaction::wal::WalOp::Insert { table_id, entity_id, data } => {
-                let table = self.table_mut(*table_id)
-                    .ok_or_else(|| crate::error::EcsDbError::SnapshotError(
-                        format!("Table {} not found in snapshot", table_id)
-                    ))?;
+            crate::transaction::wal::WalOp::Insert {
+                table_id,
+                entity_id,
+                data,
+            } => {
+                let table = self.table_mut(*table_id).ok_or_else(|| {
+                    crate::error::EcsDbError::SnapshotError(format!(
+                        "Table {} not found in snapshot",
+                        table_id
+                    ))
+                })?;
                 // Find free slot
                 let offset = if let Some(free) = table.free_slots.pop() {
                     free
@@ -233,47 +241,72 @@ impl DatabaseSnapshot {
                 };
                 // Copy data
                 if data.len() != table.record_size {
-                    return Err(crate::error::EcsDbError::SnapshotError(
-                        format!("Data size mismatch: expected {}, got {}", table.record_size, data.len())
-                    ));
+                    return Err(crate::error::EcsDbError::SnapshotError(format!(
+                        "Data size mismatch: expected {}, got {}",
+                        table.record_size,
+                        data.len()
+                    )));
                 }
                 table.buffer_data[offset..offset + table.record_size].copy_from_slice(data);
                 table.entity_mapping.push((*entity_id, offset));
                 table.active_count += 1;
                 Ok(())
             }
-            crate::transaction::wal::WalOp::Update { table_id, entity_id, data } => {
-                let table = self.table_mut(*table_id)
-                    .ok_or_else(|| crate::error::EcsDbError::SnapshotError(
-                        format!("Table {} not found in snapshot", table_id)
-                    ))?;
+            crate::transaction::wal::WalOp::Update {
+                table_id,
+                entity_id,
+                data,
+            } => {
+                let table = self.table_mut(*table_id).ok_or_else(|| {
+                    crate::error::EcsDbError::SnapshotError(format!(
+                        "Table {} not found in snapshot",
+                        table_id
+                    ))
+                })?;
                 // Find existing mapping
-                let offset = table.entity_mapping.iter()
+                let offset = table
+                    .entity_mapping
+                    .iter()
                     .find(|(eid, _)| *eid == *entity_id)
                     .map(|(_, off)| *off)
-                    .ok_or_else(|| crate::error::EcsDbError::SnapshotError(
-                        format!("Entity {} not found in table {}", entity_id, table_id)
-                    ))?;
+                    .ok_or_else(|| {
+                        crate::error::EcsDbError::SnapshotError(format!(
+                            "Entity {} not found in table {}",
+                            entity_id, table_id
+                        ))
+                    })?;
                 // Update data
                 if data.len() != table.record_size {
-                    return Err(crate::error::EcsDbError::SnapshotError(
-                        format!("Data size mismatch: expected {}, got {}", table.record_size, data.len())
-                    ));
+                    return Err(crate::error::EcsDbError::SnapshotError(format!(
+                        "Data size mismatch: expected {}, got {}",
+                        table.record_size,
+                        data.len()
+                    )));
                 }
                 table.buffer_data[offset..offset + table.record_size].copy_from_slice(data);
                 Ok(())
             }
-            crate::transaction::wal::WalOp::Delete { table_id, entity_id } => {
-                let table = self.table_mut(*table_id)
-                    .ok_or_else(|| crate::error::EcsDbError::SnapshotError(
-                        format!("Table {} not found in snapshot", table_id)
-                    ))?;
+            crate::transaction::wal::WalOp::Delete {
+                table_id,
+                entity_id,
+            } => {
+                let table = self.table_mut(*table_id).ok_or_else(|| {
+                    crate::error::EcsDbError::SnapshotError(format!(
+                        "Table {} not found in snapshot",
+                        table_id
+                    ))
+                })?;
                 // Find mapping
-                let pos = table.entity_mapping.iter()
+                let pos = table
+                    .entity_mapping
+                    .iter()
                     .position(|(eid, _)| *eid == *entity_id)
-                    .ok_or_else(|| crate::error::EcsDbError::SnapshotError(
-                        format!("Entity {} not found in table {}", entity_id, table_id)
-                    ))?;
+                    .ok_or_else(|| {
+                        crate::error::EcsDbError::SnapshotError(format!(
+                            "Entity {} not found in table {}",
+                            entity_id, table_id
+                        ))
+                    })?;
                 let (_, offset) = table.entity_mapping.remove(pos);
                 // Mark slot as free
                 table.free_slots.push(offset);
@@ -281,7 +314,8 @@ impl DatabaseSnapshot {
                 Ok(())
             }
             // Commit and Rollback are no‑ops for snapshot application
-            crate::transaction::wal::WalOp::Commit { .. } | crate::transaction::wal::WalOp::Rollback { .. } => Ok(())
+            crate::transaction::wal::WalOp::Commit { .. }
+            | crate::transaction::wal::WalOp::Rollback { .. } => Ok(()),
         }
     }
 

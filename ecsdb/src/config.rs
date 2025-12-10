@@ -104,48 +104,59 @@ impl PersistenceConfig {
             self.archive_dir = PathBuf::from(val);
         }
         if let Ok(val) = env::var("ECDB_MAX_WAL_FILE_SIZE") {
-            self.max_wal_file_size = val.parse()
-                .map_err(|_| EcsDbError::ConfigError(format!("Invalid max_wal_file_size: {}", val)))?;
+            self.max_wal_file_size = val.parse().map_err(|_| {
+                EcsDbError::ConfigError(format!("Invalid max_wal_file_size: {}", val))
+            })?;
         }
         if let Ok(val) = env::var("ECDB_SYNC_ON_WRITE") {
-            self.sync_on_write = val.parse()
+            self.sync_on_write = val
+                .parse()
                 .map_err(|_| EcsDbError::ConfigError(format!("Invalid sync_on_write: {}", val)))?;
         }
         if let Ok(val) = env::var("ECDB_SNAPSHOT_INTERVAL_TX") {
-            self.snapshot_interval_transactions = val.parse()
-                .map_err(|_| EcsDbError::ConfigError(format!("Invalid snapshot_interval_transactions: {}", val)))?;
+            self.snapshot_interval_transactions = val.parse().map_err(|_| {
+                EcsDbError::ConfigError(format!("Invalid snapshot_interval_transactions: {}", val))
+            })?;
         }
         if let Ok(val) = env::var("ECDB_SNAPSHOT_INTERVAL_SEC") {
-            self.snapshot_interval_seconds = val.parse()
-                .map_err(|_| EcsDbError::ConfigError(format!("Invalid snapshot_interval_seconds: {}", val)))?;
+            self.snapshot_interval_seconds = val.parse().map_err(|_| {
+                EcsDbError::ConfigError(format!("Invalid snapshot_interval_seconds: {}", val))
+            })?;
         }
         if let Ok(val) = env::var("ECDB_COMPRESS_SNAPSHOTS") {
-            self.compress_snapshots = val.parse()
-                .map_err(|_| EcsDbError::ConfigError(format!("Invalid compress_snapshots: {}", val)))?;
+            self.compress_snapshots = val.parse().map_err(|_| {
+                EcsDbError::ConfigError(format!("Invalid compress_snapshots: {}", val))
+            })?;
         }
         if let Ok(val) = env::var("ECDB_SNAPSHOT_COMPRESSION_LEVEL") {
-            self.snapshot_compression_level = val.parse()
-                .map_err(|_| EcsDbError::ConfigError(format!("Invalid snapshot_compression_level: {}", val)))?;
+            self.snapshot_compression_level = val.parse().map_err(|_| {
+                EcsDbError::ConfigError(format!("Invalid snapshot_compression_level: {}", val))
+            })?;
         }
         if let Ok(val) = env::var("ECDB_COMPRESS_ARCHIVED_WAL") {
-            self.compress_archived_wal = val.parse()
-                .map_err(|_| EcsDbError::ConfigError(format!("Invalid compress_archived_wal: {}", val)))?;
+            self.compress_archived_wal = val.parse().map_err(|_| {
+                EcsDbError::ConfigError(format!("Invalid compress_archived_wal: {}", val))
+            })?;
         }
         if let Ok(val) = env::var("ECDB_COMPACTION_INTERVAL_SEC") {
-            self.compaction_interval_seconds = val.parse()
-                .map_err(|_| EcsDbError::ConfigError(format!("Invalid compaction_interval_seconds: {}", val)))?;
+            self.compaction_interval_seconds = val.parse().map_err(|_| {
+                EcsDbError::ConfigError(format!("Invalid compaction_interval_seconds: {}", val))
+            })?;
         }
         if let Ok(val) = env::var("ECDB_MIN_WAL_FILES_FOR_COMPACTION") {
-            self.min_wal_files_for_compaction = val.parse()
-                .map_err(|_| EcsDbError::ConfigError(format!("Invalid min_wal_files_for_compaction: {}", val)))?;
+            self.min_wal_files_for_compaction = val.parse().map_err(|_| {
+                EcsDbError::ConfigError(format!("Invalid min_wal_files_for_compaction: {}", val))
+            })?;
         }
         if let Ok(val) = env::var("ECDB_KEEP_SNAPSHOTS") {
-            self.keep_snapshots = val.parse()
+            self.keep_snapshots = val
+                .parse()
                 .map_err(|_| EcsDbError::ConfigError(format!("Invalid keep_snapshots: {}", val)))?;
         }
         if let Ok(val) = env::var("ECDB_KEEP_ARCHIVED_WAL_FILES") {
-            self.keep_archived_wal_files = val.parse()
-                .map_err(|_| EcsDbError::ConfigError(format!("Invalid keep_archived_wal_files: {}", val)))?;
+            self.keep_archived_wal_files = val.parse().map_err(|_| {
+                EcsDbError::ConfigError(format!("Invalid keep_archived_wal_files: {}", val))
+            })?;
         }
         Ok(())
     }
@@ -162,8 +173,9 @@ impl PersistenceConfig {
 
     /// Ensures all configured directories exist.
     pub fn create_directories(&self) -> Result<()> {
-        std::fs::create_dir_all(&self.snapshot_dir)
-            .map_err(|e| EcsDbError::ConfigError(format!("Failed to create snapshot dir: {}", e)))?;
+        std::fs::create_dir_all(&self.snapshot_dir).map_err(|e| {
+            EcsDbError::ConfigError(format!("Failed to create snapshot dir: {}", e))
+        })?;
         std::fs::create_dir_all(&self.wal_dir)
             .map_err(|e| EcsDbError::ConfigError(format!("Failed to create wal dir: {}", e)))?;
         std::fs::create_dir_all(&self.archive_dir)
