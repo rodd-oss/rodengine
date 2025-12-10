@@ -1,6 +1,8 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 use ecsdb::db::Database;
 use ecsdb::replication::{ReplicationConfig, ReplicationManager};
+use ecsdb::replication::client::ClientInfo;
+use ecsdb::replication::conflict::Conflict;
 use serde_json::{self, Value};
 use std::result::Result;
 use std::sync::Arc;
@@ -226,6 +228,34 @@ async fn get_connected_clients(state: tauri::State<'_, AppState>) -> Result<usiz
     Ok(manager.connected_clients().await)
 }
 
+/// Returns serializable information for all connected clients.
+#[tauri::command]
+async fn get_clients(state: tauri::State<'_, AppState>) -> Result<Vec<ClientInfo>, String> {
+    let manager_lock = state.replication_manager.lock().await;
+    let manager = manager_lock.as_ref().ok_or("Replication not started")?;
+    let manager = manager.lock().await;
+    Ok(manager.get_clients().await)
+}
+
+/// Returns the number of pending delta batches in the broadcast queue.
+#[tauri::command]
+async fn get_pending_delta_count(state: tauri::State<'_, AppState>) -> Result<usize, String> {
+    let manager_lock = state.replication_manager.lock().await;
+    let manager = manager_lock.as_ref().ok_or("Replication not started")?;
+    let manager = manager.lock().await;
+    Ok(manager.pending_delta_count().await)
+}
+
+/// Returns the conflict log entries.
+#[tauri::command]
+async fn get_conflict_log(state: tauri::State<'_, AppState>) -> Result<Vec<Conflict>, String> {
+    let manager_lock = state.replication_manager.lock().await;
+    let manager = manager_lock.as_ref().ok_or("Replication not started")?;
+    let manager = manager.lock().await;
+    let log = manager.conflict_resolver().log();
+    Ok(log.conflicts().to_vec())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -251,7 +281,10 @@ pub fn run() {
             commit_database,
             start_replication,
             stop_replication,
-            get_connected_clients
+            get_connected_clients,
+            get_clients,
+            get_pending_delta_count,
+            get_conflict_log
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

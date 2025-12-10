@@ -30,7 +30,7 @@ impl Default for ClientId {
 }
 
 /// Client session state.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ClientState {
     /// Just connected, not authenticated.
     PendingAuth,
@@ -58,6 +58,28 @@ pub struct ClientSession {
     pub socket: Option<Arc<RwLock<TcpStream>>>,
     /// Channel for sending messages to the client's writer task.
     pub sender: mpsc::UnboundedSender<ClientMessage>,
+}
+
+/// Serializable client information for dashboard.
+#[derive(Debug, Clone, Serialize)]
+pub struct ClientInfo {
+    pub id: ClientId,
+    pub addr: SocketAddr,
+    pub state: ClientState,
+    pub client_version: u64,
+    pub subscribed_tables: Vec<u16>,
+}
+
+impl From<&ClientSession> for ClientInfo {
+    fn from(session: &ClientSession) -> Self {
+        Self {
+            id: session.id,
+            addr: session.addr,
+            state: session.state.clone(),
+            client_version: session.client_version,
+            subscribed_tables: session.subscribed_tables.clone(),
+        }
+    }
 }
 
 /// Messages that can be sent to a client.
@@ -147,6 +169,12 @@ impl ClientManager {
     pub async fn connected_count(&self) -> usize {
         let sessions = self.sessions.read().await;
         sessions.len()
+    }
+
+    /// Returns serializable information for all connected clients.
+    pub async fn get_clients(&self) -> Vec<ClientInfo> {
+        let sessions = self.sessions.read().await;
+        sessions.values().map(ClientInfo::from).collect()
     }
 
     /// Broadcasts a message to all clients in the given state.

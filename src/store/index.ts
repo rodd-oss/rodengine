@@ -19,6 +19,8 @@ export const useAppStore = defineStore('app', () => {
   // Replication state
   const connectedClients = ref<any[]>([])
   const deltaStream = ref<any[]>([])
+  const pendingDeltaCount = ref(0)
+  const conflictLog = ref<any[]>([])
   
   // Actions
   const setCurrentSchema = (schema: any) => {
@@ -133,6 +135,53 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
+  const fetchClients = async () => {
+    try {
+      const clients = await invoke<any[]>('get_clients')
+      console.log('Fetched clients:', clients)
+      // Map to UI shape
+      connectedClients.value = clients.map(client => ({
+        id: client.id[0], // UUID string from tuple array
+        address: client.addr,
+        version: '1.0.0', // placeholder
+        lastHeartbeat: new Date().toISOString(), // placeholder
+        lag: 0, // placeholder
+        status: client.state.toLowerCase()
+      }))
+    } catch (error) {
+      console.error('Failed to fetch clients:', error)
+      throw error
+    }
+  }
+
+  const fetchPendingDeltaCount = async () => {
+    try {
+      const count = await invoke<number>('get_pending_delta_count')
+      pendingDeltaCount.value = count
+      return count
+    } catch (error) {
+      console.error('Failed to fetch pending delta count:', error)
+      throw error
+    }
+  }
+
+  const fetchConflictLog = async () => {
+    try {
+      const conflicts = await invoke<any[]>('get_conflict_log')
+      conflictLog.value = conflicts.map(conflict => ({
+        id: conflict.timestamp, // use timestamp as id
+        type: conflict.field_offset !== null ? 'field' : 'row',
+        table: conflict.table_id.toString(), // TODO: map table id to name
+        entityId: conflict.entity_id,
+        resolution: 'server-wins', // placeholder
+        timestamp: new Date(conflict.timestamp).toISOString()
+      }))
+    } catch (error) {
+      console.error('Failed to fetch conflict log:', error)
+      throw error
+    }
+  }
+
   const createEntity = async () => {
     try {
       const entityId = await invoke<number>('create_entity')
@@ -221,6 +270,8 @@ export const useAppStore = defineStore('app', () => {
     databasePath,
     connectedClients,
     deltaStream,
+    pendingDeltaCount,
+    conflictLog,
     
     // Actions
     setCurrentSchema,
@@ -236,6 +287,9 @@ export const useAppStore = defineStore('app', () => {
     startReplication,
     stopReplication,
     fetchConnectedClients,
+    fetchClients,
+    fetchPendingDeltaCount,
+    fetchConflictLog,
     createEntity,
     getEntityCount,
     fetchEntities,

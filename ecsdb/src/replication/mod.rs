@@ -160,6 +160,11 @@ impl ReplicationManager {
         self.client_manager.connected_count().await
     }
 
+    /// Returns serializable information for all connected clients.
+    pub async fn get_clients(&self) -> Vec<self::client::ClientInfo> {
+        self.client_manager.get_clients().await
+    }
+
     /// Returns a reference to the client manager.
     pub fn client_manager(&self) -> &Arc<ClientManager> {
         &self.client_manager
@@ -168,6 +173,16 @@ impl ReplicationManager {
     /// Returns a reference to the broadcast queue.
     pub fn broadcast_queue(&self) -> &Arc<BroadcastQueue> {
         &self.broadcast_queue
+    }
+
+    /// Returns the number of pending delta batches in the broadcast queue.
+    pub async fn pending_delta_count(&self) -> usize {
+        self.broadcast_queue.pending_count().await
+    }
+
+    /// Returns a reference to the conflict resolver.
+    pub fn conflict_resolver(&self) -> &conflict::ConflictResolver {
+        &self.conflict_resolver
     }
 
     /// Returns a mutable reference to the conflict resolver.

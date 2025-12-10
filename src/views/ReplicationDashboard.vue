@@ -6,7 +6,6 @@ const appStore = useAppStore()
 const serverStatus = ref('stopped')
 const clientCount = ref(0)
 const deltaQueueSize = ref(0)
-const conflicts = ref<any[]>([])
 const syncProgress = ref(0)
 const serverLoading = ref(false)
 const serverError = ref('')
@@ -39,6 +38,7 @@ const stopServer = async () => {
   }
 }
 
+// Mock functions kept for testing (optional)
 const addMockClient = () => {
   const clientId = appStore.connectedClients.length + 1
   const client = {
@@ -73,22 +73,29 @@ const addMockConflict = () => {
     resolution: 'server-wins',
     timestamp: new Date().toISOString()
   }
-  conflicts.value.unshift(conflict)
-  if (conflicts.value.length > 50) {
-    conflicts.value.pop()
+  // conflicts are stored in appStore.conflictLog, but mock adds to local ref
+  // For consistency, we can push to store's conflictLog if needed.
+  // For now, just keep as mock UI.
+  appStore.conflictLog.unshift(conflict)
+  if (appStore.conflictLog.length > 50) {
+    appStore.conflictLog.pop()
   }
 }
 
-const updateClientCount = async () => {
+const updateReplicationData = async () => {
   if (serverStatus.value === 'running') {
     try {
-      const count = await appStore.fetchConnectedClients()
-      clientCount.value = count
+      await appStore.fetchClients()
+      await appStore.fetchPendingDeltaCount()
+      await appStore.fetchConflictLog()
+      clientCount.value = appStore.connectedClients.length
+      deltaQueueSize.value = appStore.pendingDeltaCount
     } catch (error) {
-      console.error('Failed to fetch client count:', error)
+      console.error('Failed to update replication data:', error)
     }
   } else {
     clientCount.value = 0
+    deltaQueueSize.value = 0
   }
 }
 
@@ -97,8 +104,7 @@ let interval: number
 onMounted(() => {
   interval = setInterval(() => {
     if (serverStatus.value === 'running') {
-      deltaQueueSize.value = Math.floor(Math.random() * 100) // TODO: replace with real delta queue size
-      updateClientCount()
+      updateReplicationData()
     }
   }, 1000)
 })
@@ -225,11 +231,11 @@ onUnmounted(() => {
       
       <div class="conflicts-panel">
         <h3>Recent Conflicts</h3>
-        <div v-if="conflicts.length === 0" class="empty-state">
-          No conflicts
-        </div>
+         <div v-if="appStore.conflictLog.length === 0" class="empty-state">
+           No conflicts
+         </div>
         <div v-else class="conflicts-list">
-          <div v-for="conflict in conflicts.slice(0, 10)" :key="conflict.id" class="conflict-item">
+           <div v-for="conflict in appStore.conflictLog.slice(0, 10)" :key="conflict.id" class="conflict-item">
             <div class="conflict-header">
               <span class="conflict-type">{{ conflict.type }}</span>
               <span class="conflict-resolution" :class="conflict.resolution">

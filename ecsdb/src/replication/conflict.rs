@@ -4,6 +4,7 @@
 
 use crate::error::{EcsDbError, Result};
 use crate::storage::delta::{Delta, DeltaOp};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -19,7 +20,7 @@ pub enum ConflictStrategy {
 }
 
 /// A detected conflict between server and client versions.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Conflict {
     pub table_id: u16,
     pub entity_id: u64,

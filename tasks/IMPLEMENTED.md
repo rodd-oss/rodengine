@@ -87,7 +87,7 @@
 | 4.5 Full‑Sync Protocol | ✅ | Chunked snapshot transfer, progress reporting, schema + snapshot |
 | 4.6 Incremental Sync | ✅ | Delta archive, version‑based catch‑up, heartbeat manager |
 | 4.7 Client Library | ✅ | `ecsdb_client` crate with `ClientDB`, delta application, in‑memory storage |
-| 4.8 Integration with Dashboard | ⚠️ Partial | Basic integration via Tauri commands; replication start/stop and client count working |
+| 4.8 Integration with Dashboard | ✅ | Full integration with dashboard: real client list, delta queue size, conflict log, start/stop controls |
 | 4.9 Testing & Simulation | ⚠️ | Basic unit tests exist; missing integration and simulation tests |
 
 ## Phase 5: Dashboard & Polish (Mostly Completed)
@@ -106,7 +106,7 @@
 | 5.10 Tauri Integration | ✅ | Store updated with Tauri invoke calls; Schema Editor, Data Viewer, Replication Dashboard connected to real database commands; file dialogs for schema loading |
 | 5.11 Polish & Bug Fixes | ⚠️ Partial | Basic UI polish; needs error messages, keyboard shortcuts, loading indicators |
 
-**Note**: Dashboard UI is fully functional with mock data. Integration with actual database commands via Tauri has been implemented for Schema Editor, Data Viewer, and Replication Dashboard (see Phase 5.11).
+**Note**: Dashboard UI is fully functional with real data for Schema Editor, Data Viewer, and Replication Dashboard. Integration with actual database commands via Tauri has been implemented (see Phase 5.11).
 
 ## Test Coverage Progress
 
