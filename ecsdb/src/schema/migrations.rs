@@ -1,1 +1,0 @@
-// Schema migration system (placeholder)
