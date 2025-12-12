@@ -1,0 +1,15 @@
+[package]
+name = "db-core"
+version = "0.1.0"
+edition = "2021"
+authors = ["Your Name <email@example.com>"]
+description = "Core storage engine for in-memory relational database"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+arc-swap = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+criterion = "0.5"

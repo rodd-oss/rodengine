@@ -1,0 +1,16 @@
+[package]
+name = "db-test-runner"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "db-test-runner"
+path = "src/main.rs"
+
+[dependencies]
+db-core = { path = "../../packages/db-core" }
+db-runtime = { path = "../../packages/db-runtime" }
+db-api = { path = "../../packages/db-api" }
+db-persistence = { path = "../../packages/db-persistence" }
+serde_json = { workspace = true }
+tokio = { workspace = true }

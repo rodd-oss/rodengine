@@ -1,0 +1,18 @@
+[package]
+name = "db-server"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "db-server"
+path = "src/main.rs"
+
+[dependencies]
+db-core = { path = "../../packages/db-core" }
+db-runtime = { path = "../../packages/db-runtime" }
+db-api = { path = "../../packages/db-api" }
+db-persistence = { path = "../../packages/db-persistence" }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+clap = { version = "4.0", features = ["derive"] }

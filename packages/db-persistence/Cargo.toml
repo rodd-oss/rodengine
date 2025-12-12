@@ -1,0 +1,11 @@
+[package]
+name = "db-persistence"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+db-core = { path = "../db-core" }
+db-types = { path = "../db-types" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
