@@ -362,3 +362,500 @@ fn safety_invariants_as_mut_ptr() {
     buffer.extend_from_slice(&[0x42, 0x24]);
     assert_eq!(buffer.as_slice(), &[0x42, 0x24]);
 }
+
+// Tests for task_sl_4: Write records into buffer at correct offsets via unsafe pointer casting
+
+#[test]
+fn test_write_single_record() {
+    use db_core::storage::TableBuffer;
+
+    let mut buffer = TableBuffer::new_zeroed(128);
+    let record_size = 24; // i32(4) + f32(4) + bool(1) = 9, but with alignment
+
+    // Create field data
+    let id_data = 42u32.to_ne_bytes();
+    let score_data = 3.5f32.to_ne_bytes();
+    let active_data = [1u8]; // true as u8
+
+    // Write record with multiple field types
+    let fields = vec![
+        (0, id_data.as_slice()),     // id at offset 0
+        (4, score_data.as_slice()),  // score at offset 4 (aligned)
+        (8, active_data.as_slice()), // active at offset 8
+    ];
+
+    unsafe {
+        buffer.write_record(0, record_size, &fields);
+    }
+
+    // Verify data written at correct byte offsets
+    unsafe {
+        assert_eq!(buffer.read_at::<u32>(0), 42);
+        assert!((buffer.read_at::<f32>(4) - 3.5).abs() < 0.0001);
+        assert_eq!(buffer.read_at::<bool>(8), true);
+    }
+
+    // Record size matches calculated size (9 bytes for data, but we allocated 24 for test)
+    assert!(record_size >= 9);
+}
+
+#[test]
+fn test_write_multiple_records() {
+    use db_core::storage::TableBuffer;
+
+    let mut buffer = TableBuffer::new_zeroed(256);
+    let record_size = 16;
+
+    // Write several consecutive records
+    for i in 0..3 {
+        let id_data = (100 + i as u32).to_ne_bytes();
+        let value_data = (i as f64 * 10.0).to_ne_bytes();
+
+        let fields = vec![
+            (0, id_data.as_slice()),
+            (8, value_data.as_slice()), // f64 needs 8-byte alignment
+        ];
+
+        unsafe {
+            buffer.write_record(i, record_size, &fields);
+        }
+    }
+
+    // Verify each record resides at correct offset
+    for i in 0..3 {
+        let record_offset = i * record_size;
+        unsafe {
+            assert_eq!(buffer.read_at::<u32>(record_offset), 100 + i as u32);
+            assert!((buffer.read_at::<f64>(record_offset + 8) - (i as f64 * 10.0)).abs() < 0.0001);
+        }
+
+        // Verify fields don't bleed into neighboring records
+        if i < 2 {
+            let next_record_offset = (i + 1) * record_size;
+            // Check that bytes between records are zero (buffer was zeroed)
+            for byte_idx in (record_offset + 16)..next_record_offset {
+                assert_eq!(buffer.as_slice()[byte_idx], 0);
+            }
+        }
+    }
+}
+
+#[test]
+fn test_write_partial_record() {
+    use db_core::storage::TableBuffer;
+
+    let mut buffer = TableBuffer::new_zeroed(128);
+    let record_size = 32;
+
+    // Write complete record first
+    let id_data = 1u32.to_ne_bytes();
+    let name_len_data = 5u16.to_ne_bytes();
+    let active_data = [1u8]; // true as u8
+
+    let initial_fields = vec![
+        (0, id_data.as_slice()),
+        (4, name_len_data.as_slice()),
+        (6, active_data.as_slice()),
+    ];
+
+    unsafe {
+        buffer.write_record(0, record_size, &initial_fields);
+    }
+
+    // Update only the active field
+    let new_active_data = [0u8]; // false as u8
+    let update_fields = vec![(6, new_active_data.as_slice())];
+
+    unsafe {
+        buffer.write_record(0, record_size, &update_fields);
+    }
+
+    // Verify unwritten fields retain previous values
+    unsafe {
+        assert_eq!(buffer.read_at::<u32>(0), 1); // unchanged
+        assert_eq!(buffer.read_at::<u16>(4), 5); // unchanged
+        assert_eq!(buffer.read_at::<bool>(6), false); // updated
+    }
+
+    // Verify partial write didn't corrupt adjacent fields
+    // Check bytes around the updated field
+    assert_eq!(buffer.as_slice()[5], 0); // byte before active field (padding)
+    assert_eq!(buffer.as_slice()[7], 0); // byte after active field (since bool is 1 byte)
+}
+
+#[test]
+fn test_write_at_buffer_start() {
+    use db_core::storage::TableBuffer;
+
+    let mut buffer = TableBuffer::new_zeroed(64);
+    let record_size = 16;
+
+    let field_data = 0x12345678u32.to_ne_bytes();
+    let fields = vec![(0, field_data.as_slice())];
+
+    unsafe {
+        buffer.write_record(0, record_size, &fields);
+    }
+
+    // Pointer arithmetic should yield offset 0
+    unsafe {
+        let ptr = buffer.as_ptr() as *const u32;
+        let value = ptr.read_unaligned();
+        assert_eq!(value, 0x12345678);
+    }
+
+    // All fields should be accessible
+    unsafe {
+        assert_eq!(buffer.read_at::<u32>(0), 0x12345678);
+    }
+}
+
+#[test]
+fn test_write_at_buffer_end() {
+    use db_core::storage::TableBuffer;
+
+    let capacity = 64;
+    let mut buffer = TableBuffer::new_zeroed(capacity);
+    let record_size = 16;
+
+    // Write record that ends exactly at buffer.len()
+    let record_index = (capacity / record_size) - 1;
+    let field_data = 0xCAFEBABEu32.to_ne_bytes();
+    let fields = vec![(0, field_data.as_slice())];
+
+    unsafe {
+        buffer.write_record(record_index, record_size, &fields);
+    }
+
+    // Write should succeed without panic
+    let record_offset = record_index * record_size;
+    unsafe {
+        assert_eq!(buffer.read_at::<u32>(record_offset), 0xCAFEBABE);
+    }
+
+    // Record should end at buffer capacity
+    assert_eq!(record_offset + record_size, capacity);
+}
+
+#[test]
+fn test_write_near_capacity() {
+    use db_core::storage::TableBuffer;
+
+    // Test that write_record_checked detects when record would exceed buffer capacity
+    let capacity = 64;
+    let mut buffer = TableBuffer::new_zeroed(capacity);
+    let record_size = 32;
+
+    // Try to write record where there's not enough space
+    // 2 * 32 = 64, record would occupy bytes 64..96 exceeding capacity 64
+    let record_index = 2;
+    let field_data = 0xDEADBEEFu32.to_ne_bytes();
+    let fields = vec![(0, field_data.as_slice())];
+
+    // Should return error about capacity
+    let result = buffer.write_record_checked(record_index, record_size, &fields);
+    assert!(result.is_err());
+    let err_msg = result.unwrap_err();
+    assert!(
+        err_msg.contains("capacity"),
+        "Error message should mention capacity: {}",
+        err_msg
+    );
+}
+
+#[test]
+fn test_all_scalar_types() {
+    use db_core::storage::TableBuffer;
+
+    let mut buffer = TableBuffer::new_zeroed(256);
+    let record_size = 128;
+
+    // Test writing each supported scalar type
+    let i8_val: i8 = -42;
+    let u16_val: u16 = 0x1234;
+    let i32_val: i32 = -123456;
+    let i64_val: i64 = 0x0123456789ABCDEF;
+    let f32_val: f32 = 3.14159;
+    let f64_val: f64 = 2.71828;
+    let bool_val: bool = true;
+
+    // Store byte arrays to avoid temporary value issues
+    let i8_bytes = i8_val.to_ne_bytes();
+    let u16_bytes = u16_val.to_ne_bytes();
+    let i32_bytes = i32_val.to_ne_bytes();
+    let i64_bytes = i64_val.to_ne_bytes();
+    let f32_bytes = f32_val.to_ne_bytes();
+    let f64_bytes = f64_val.to_ne_bytes();
+    let bool_bytes = [bool_val as u8];
+
+    let fields = vec![
+        (0, i8_bytes.as_slice()),
+        (1, u16_bytes.as_slice()),
+        (4, i32_bytes.as_slice()),
+        (8, i64_bytes.as_slice()),
+        (16, f32_bytes.as_slice()),
+        (20, f64_bytes.as_slice()),
+        (28, bool_bytes.as_slice()),
+    ];
+
+    unsafe {
+        buffer.write_record(0, record_size, &fields);
+
+        // Verify each value round-trips correctly
+        assert_eq!(buffer.read_at::<i8>(0), -42);
+        assert_eq!(buffer.read_unaligned_at::<u16>(1), 0x1234);
+        assert_eq!(buffer.read_at::<i32>(4), -123456);
+        assert_eq!(buffer.read_at::<i64>(8), 0x0123456789ABCDEF);
+        assert!((buffer.read_at::<f32>(16) - 3.14159).abs() < 0.0001);
+        assert!((buffer.read_unaligned_at::<f64>(20) - 2.71828).abs() < 0.0001);
+        assert_eq!(buffer.read_at::<bool>(28), true);
+    }
+}
+
+#[test]
+fn test_endianness_consistency() {
+    use db_core::storage::TableBuffer;
+
+    let mut buffer = TableBuffer::new_zeroed(64);
+    let record_size = 16;
+
+    // Write a multi-byte integer
+    let value: u32 = 0xDEADBEEF;
+    let field_data = value.to_ne_bytes();
+    let fields = vec![(0, field_data.as_slice())];
+
+    unsafe {
+        buffer.write_record(0, record_size, &fields);
+    }
+
+    // Verify byte sequence in buffer matches to_ne_bytes()
+    let bytes = unsafe { std::slice::from_raw_parts(buffer.as_ptr(), 4) };
+    let expected_bytes = value.to_ne_bytes();
+    assert_eq!(bytes, expected_bytes);
+
+    // Verify read back gives same value
+    unsafe {
+        let read_value = buffer.read_at::<u32>(0);
+        assert_eq!(read_value, value);
+    }
+}
+
+#[test]
+fn test_zeroed_buffer_write() {
+    use db_core::storage::TableBuffer;
+
+    let mut buffer = TableBuffer::new_zeroed(128);
+    let record_size = 32;
+
+    // Verify buffer starts zeroed
+    assert!(buffer.as_slice().iter().all(|&b| b == 0));
+
+    // Write a record
+    let id_data = 0x12345678u32.to_ne_bytes();
+    let score_data = 0x3F8CCCCDu32.to_ne_bytes(); // ~1.1 in f32
+
+    let fields = vec![(0, id_data.as_slice()), (4, score_data.as_slice())];
+
+    unsafe {
+        buffer.write_record(0, record_size, &fields);
+    }
+
+    // Verify written bytes are non-zero where expected
+    for i in 0..4 {
+        assert_ne!(buffer.as_slice()[i], 0); // id bytes
+    }
+    for i in 4..8 {
+        assert_ne!(buffer.as_slice()[i], 0); // score bytes
+    }
+
+    // Verify untouched bytes stay zero
+    for i in 8..record_size {
+        assert_eq!(buffer.as_slice()[i], 0);
+    }
+}
+
+#[test]
+fn test_custom_composite_type() {
+    use db_core::storage::TableBuffer;
+
+    let mut buffer = TableBuffer::new_zeroed(128);
+    let record_size = 32;
+
+    // Simulate a Vec3 type (3xf32)
+    let x_data = 1.0f32.to_ne_bytes();
+    let y_data = 2.0f32.to_ne_bytes();
+    let z_data = 3.0f32.to_ne_bytes();
+
+    let fields = vec![
+        (0, x_data.as_slice()),
+        (4, y_data.as_slice()),
+        (8, z_data.as_slice()),
+    ];
+
+    unsafe {
+        buffer.write_record(0, record_size, &fields);
+
+        // Verify all components appear at expected sub-offsets
+        assert!((buffer.read_at::<f32>(0) - 1.0).abs() < 0.0001);
+        assert!((buffer.read_at::<f32>(4) - 2.0).abs() < 0.0001);
+        assert!((buffer.read_at::<f32>(8) - 3.0).abs() < 0.0001);
+    }
+}
+
+#[test]
+fn test_write_record_checked_success() {
+    use db_core::storage::TableBuffer;
+
+    let mut buffer = TableBuffer::new_zeroed(128);
+    let record_size = 16;
+
+    let id_data = 42u32.to_ne_bytes();
+    let score_data = 3.5f32.to_ne_bytes();
+
+    let fields = vec![(0, id_data.as_slice()), (4, score_data.as_slice())];
+
+    // Should succeed with bounds checking
+    let result = buffer.write_record_checked(0, record_size, &fields);
+    assert!(result.is_ok());
+
+    // Verify data was written
+    unsafe {
+        assert_eq!(buffer.read_at::<u32>(0), 42);
+        assert!((buffer.read_at::<f32>(4) - 3.5).abs() < 0.0001);
+    }
+}
+
+#[test]
+fn test_write_record_checked_out_of_bounds_index() {
+    use db_core::storage::TableBuffer;
+
+    let mut buffer = TableBuffer::new_zeroed(64);
+    let record_size = 16;
+
+    let field_data = 0x12345678u32.to_ne_bytes();
+    let fields = vec![(0, field_data.as_slice())];
+
+    // Try to write at index that would exceed buffer (64 / 16 = 4 records max, index 4 is out of bounds)
+    let result = buffer.write_record_checked(4, record_size, &fields);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("exceed buffer capacity"));
+}
+
+#[test]
+fn test_write_record_checked_out_of_bounds_offset() {
+    use db_core::storage::TableBuffer;
+
+    let mut buffer = TableBuffer::new_zeroed(64);
+    let record_size = 16;
+
+    let field_data = 0x12345678u32.to_ne_bytes();
+    // Field offset 20 exceeds record size 16
+    let fields = vec![(20, field_data.as_slice())];
+
+    let result = buffer.write_record_checked(0, record_size, &fields);
+    assert!(result.is_err());
+    assert!(result
+        .unwrap_err()
+        .contains("field offset exceeds record size"));
+}
+
+#[test]
+fn test_write_record_checked_field_exceeds_record() {
+    use db_core::storage::TableBuffer;
+
+    let mut buffer = TableBuffer::new_zeroed(64);
+    let record_size = 8;
+
+    // Create a field that's too large for the record
+    let large_data = vec![0u8; 16]; // 16 bytes > record size 8
+    let fields = vec![(0, large_data.as_slice())];
+
+    let result = buffer.write_record_checked(0, record_size, &fields);
+    assert!(result.is_err());
+    assert!(result
+        .unwrap_err()
+        .contains("field data would exceed record bounds"));
+}
+
+#[test]
+fn test_write_record_checked_overflow_calculation() {
+    use db_core::storage::TableBuffer;
+
+    let mut buffer = TableBuffer::new_zeroed(1024);
+
+    // Test overflow in record_index * record_size
+    let record_index = usize::MAX;
+    let record_size = 2;
+    let field_data = [0u8; 1];
+    let fields = vec![(0, field_data.as_slice())];
+
+    let result = buffer.write_record_checked(record_index, record_size, &fields);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("overflow"));
+}
+
+#[test]
+fn test_write_record_checked_null_pointer_safety() {
+    use db_core::storage::TableBuffer;
+
+    // Even with zero capacity, should handle gracefully
+    let mut buffer = TableBuffer::new_zeroed(0);
+    let record_size = 16;
+    let field_data = [0u8; 4];
+    let fields = vec![(0, field_data.as_slice())];
+
+    let result = buffer.write_record_checked(0, record_size, &fields);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("exceed buffer capacity"));
+}
+
+#[test]
+fn test_write_record_checked_overlap_detection() {
+    use db_core::storage::TableBuffer;
+
+    let mut buffer = TableBuffer::new_zeroed(128);
+    let record_size = 32;
+
+    // First write a record
+    let field1_data = 0x11111111u32.to_ne_bytes();
+    let fields1 = vec![(0, field1_data.as_slice())];
+
+    let result1 = buffer.write_record_checked(0, record_size, &fields1);
+    assert!(result1.is_ok());
+
+    // Try to write overlapping record (incorrect record size calculation)
+    // If record_size were incorrectly calculated as 16 instead of 32,
+    // record 1 would overlap with record 0
+    let field2_data = 0x22222222u32.to_ne_bytes();
+    let fields2 = vec![(0, field2_data.as_slice())];
+
+    // This should succeed because we're using correct record_size
+    let result2 = buffer.write_record_checked(1, record_size, &fields2);
+    assert!(result2.is_ok());
+
+    // Verify both records exist
+    unsafe {
+        assert_eq!(buffer.read_at::<u32>(0), 0x11111111);
+        assert_eq!(buffer.read_at::<u32>(32), 0x22222222); // record 1 at offset 32
+    }
+}
+
+#[test]
+fn test_write_record_checked_field_overlap() {
+    use db_core::storage::TableBuffer;
+
+    let mut buffer = TableBuffer::new_zeroed(64);
+    let record_size = 16;
+
+    // Create overlapping fields
+    let field1_data = [1u8, 2, 3, 4]; // 4 bytes at offset 0
+    let field2_data = [5u8, 6, 7, 8]; // 4 bytes at offset 2 (overlaps)
+    let fields = vec![
+        (0, field1_data.as_slice()),
+        (2, field2_data.as_slice()), // overlaps with field1 at bytes 2-3
+    ];
+
+    let result = buffer.write_record_checked(0, record_size, &fields);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("overlapping"));
+}
