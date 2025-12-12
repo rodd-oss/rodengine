@@ -613,7 +613,124 @@ impl TableBuffer {
         // All checks passed, perform the read
         unsafe { Ok(self.read_record(record_index, record_size, fields)) }
     }
+
+    /// Returns an iterator over records in the buffer.
+    ///
+    /// The iterator yields slices of bytes, each representing one record.
+    /// Records are assumed to be tightly packed with the given `record_size`.
+    ///
+    /// # Parameters
+    ///
+    /// - `record_size`: The size of each record in bytes. Must be > 0.
+    ///
+    /// # Returns
+    ///
+    /// An iterator that yields `&[u8]` slices for each record.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `record_size` is 0.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use db_core::storage::TableBuffer;
+    ///
+    /// let buffer = TableBuffer::new_zeroed(64);
+    /// let record_size = 16;
+    ///
+    /// for record in buffer.record_iter(record_size) {
+    ///     println!("Record: {:?}", record);
+    /// }
+    /// ```
+    pub fn record_iter(&self, record_size: usize) -> RecordIter<'_> {
+        RecordIter::new(self, record_size)
+    }
 }
+
+/// Iterator over records in a `TableBuffer`.
+///
+/// Yields references to each record as a byte slice.
+/// Implements both forward and backward iteration (double-ended).
+#[derive(Debug, Clone)]
+pub struct RecordIter<'a> {
+    buffer: &'a TableBuffer,
+    record_size: usize,
+    front: usize,
+    back: usize,
+}
+
+impl<'a> RecordIter<'a> {
+    /// Creates a new iterator over records in the buffer.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `record_size` is 0.
+    fn new(buffer: &'a TableBuffer, record_size: usize) -> Self {
+        if record_size == 0 {
+            panic!("record_size must be > 0");
+        }
+
+        let total_bytes = buffer.len();
+        let total_records = total_bytes / record_size;
+
+        Self {
+            buffer,
+            record_size,
+            front: 0,
+            back: total_records,
+        }
+    }
+}
+
+impl<'a> Iterator for RecordIter<'a> {
+    type Item = &'a [u8];
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.front >= self.back {
+            return None;
+        }
+
+        let record_start = self.front * self.record_size;
+        let _record_end = record_start + self.record_size;
+
+        // Safety: We've calculated bounds based on buffer length and record size
+        // The slice is within the buffer's initialized memory
+        let record = unsafe {
+            std::slice::from_raw_parts(self.buffer.as_ptr().add(record_start), self.record_size)
+        };
+
+        self.front += 1;
+        Some(record)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let remaining = self.back.saturating_sub(self.front);
+        (remaining, Some(remaining))
+    }
+}
+
+impl<'a> DoubleEndedIterator for RecordIter<'a> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        if self.front >= self.back {
+            return None;
+        }
+
+        self.back -= 1;
+        let record_start = self.back * self.record_size;
+        let _record_end = record_start + self.record_size;
+
+        // Safety: We've calculated bounds based on buffer length and record size
+        // The slice is within the buffer's initialized memory
+        let record = unsafe {
+            std::slice::from_raw_parts(self.buffer.as_ptr().add(record_start), self.record_size)
+        };
+
+        Some(record)
+    }
+}
+
+impl<'a> ExactSizeIterator for RecordIter<'a> {}
 
 impl Default for TableBuffer {
     /// Creates an empty TableBuffer with zero capacity.
@@ -1720,5 +1837,337 @@ mod tests {
             let expected_value = (1000 + i as u32).to_ne_bytes();
             assert_eq!(result[0], expected_value.as_slice());
         }
+    }
+
+    // Tests for task_zc_2: Iterator over table records that yields references
+    #[test]
+    fn test_iter_empty_table() {
+        let buffer = TableBuffer::new();
+        let record_size = 16;
+
+        let mut iter = buffer.record_iter(record_size);
+        assert_eq!(iter.next(), None);
+        assert_eq!(iter.size_hint(), (0, Some(0)));
+    }
+
+    #[test]
+    fn test_iter_single_record() {
+        let mut buffer = TableBuffer::new_zeroed(16); // Exactly one record
+        let record_size = 16;
+
+        // Write a single record
+        let value = 0xDEADBEEFu32;
+        let value_data = value.to_ne_bytes();
+        let write_fields = vec![(0, value_data.as_slice())];
+
+        unsafe {
+            buffer.write_record(0, record_size, &write_fields);
+        }
+
+        let mut iter = buffer.record_iter(record_size);
+
+        // First call should return the record
+        let record = iter.next().expect("Should have one record");
+        assert_eq!(record.len(), record_size);
+
+        // Verify the data matches
+        let record_u32 = unsafe { std::ptr::read_unaligned(record.as_ptr() as *const u32) };
+        assert_eq!(record_u32, value);
+
+        // Second call should return None
+        assert_eq!(iter.next(), None);
+        assert_eq!(iter.size_hint(), (0, Some(0)));
+    }
+
+    #[test]
+    fn test_iter_multiple_records() {
+        let mut buffer = TableBuffer::new_zeroed(64); // Exactly 4 records
+        let record_size = 16;
+        let num_records = 4;
+
+        // Write multiple records with different values
+        for i in 0..num_records {
+            let value = (1000 + i as u32).to_ne_bytes();
+            let write_fields = vec![(0, value.as_slice())];
+
+            unsafe {
+                buffer.write_record(i, record_size, &write_fields);
+            }
+        }
+
+        let iter = buffer.record_iter(record_size);
+        let collected: Vec<_> = iter.collect();
+
+        assert_eq!(collected.len(), num_records);
+
+        // Verify each record contains the correct data
+        for (i, record) in collected.iter().enumerate() {
+            assert_eq!(record.len(), record_size);
+            let record_u32 = unsafe { std::ptr::read_unaligned(record.as_ptr() as *const u32) };
+            assert_eq!(record_u32, 1000 + i as u32);
+        }
+    }
+
+    #[test]
+    fn test_iter_double_ended() {
+        let mut buffer = TableBuffer::new_zeroed(80); // Exactly 5 records
+        let record_size = 16;
+        let num_records = 5;
+
+        // Write multiple records
+        for i in 0..num_records {
+            let value = (i as u32).to_ne_bytes();
+            let write_fields = vec![(0, value.as_slice())];
+
+            unsafe {
+                buffer.write_record(i, record_size, &write_fields);
+            }
+        }
+
+        let mut iter = buffer.record_iter(record_size);
+
+        // Collect from front and back simultaneously
+        let mut front_to_back = Vec::new();
+        let mut back_to_front = Vec::new();
+
+        while let Some(record) = iter.next() {
+            front_to_back.push(record);
+        }
+
+        let mut iter = buffer.record_iter(record_size);
+        while let Some(record) = iter.next_back() {
+            back_to_front.push(record);
+        }
+
+        // Reverse back_to_front to compare
+        back_to_front.reverse();
+
+        assert_eq!(front_to_back.len(), num_records);
+        assert_eq!(back_to_front.len(), num_records);
+
+        // Verify both sequences are the same
+        for (front, back) in front_to_back.iter().zip(back_to_front.iter()) {
+            assert_eq!(front.as_ptr(), back.as_ptr());
+            assert_eq!(front.len(), back.len());
+        }
+    }
+
+    #[test]
+    fn test_iter_size_hint() {
+        let mut buffer = TableBuffer::new_zeroed(48); // Exactly 3 records
+        let record_size = 16;
+        let num_records = 3;
+
+        // Write multiple records
+        for i in 0..num_records {
+            let value = (i as u32).to_ne_bytes();
+            let write_fields = vec![(0, value.as_slice())];
+
+            unsafe {
+                buffer.write_record(i, record_size, &write_fields);
+            }
+        }
+
+        let mut iter = buffer.record_iter(record_size);
+
+        // Initial size hint should match total records
+        assert_eq!(iter.size_hint(), (num_records, Some(num_records)));
+
+        // After first item
+        iter.next();
+        assert_eq!(iter.size_hint(), (num_records - 1, Some(num_records - 1)));
+
+        // After second item
+        iter.next();
+        assert_eq!(iter.size_hint(), (num_records - 2, Some(num_records - 2)));
+
+        // After third item (empty)
+        iter.next();
+        assert_eq!(iter.size_hint(), (0, Some(0)));
+    }
+
+    #[test]
+    fn test_iter_ref_lifetime() {
+        let mut buffer = TableBuffer::new_zeroed(16); // Exactly one record
+        let record_size = 16;
+
+        // Write a record
+        let value = 0x12345678u32;
+        let value_data = value.to_ne_bytes();
+        let write_fields = vec![(0, value_data.as_slice())];
+
+        unsafe {
+            buffer.write_record(0, record_size, &write_fields);
+        }
+
+        let mut iter = buffer.record_iter(record_size);
+        let record_ref = iter.next().expect("Should have a record");
+
+        // Store the reference and use it after iterator advances
+        let record_ptr = record_ref.as_ptr();
+        let record_len = record_ref.len();
+
+        // Verify we can still use the reference
+        assert_eq!(record_len, record_size);
+
+        // Read the value from the stored reference's pointer
+        let stored_value = unsafe { std::ptr::read_unaligned(record_ptr as *const u32) };
+        assert_eq!(stored_value, value);
+
+        // Iterator should be empty now
+        assert_eq!(iter.next(), None);
+    }
+
+    #[test]
+    fn test_iter_record_size_alignment() {
+        let mut buffer = TableBuffer::new_zeroed(128);
+        let record_size = 32;
+        let num_records = 3;
+
+        // Write multiple records
+        for i in 0..num_records {
+            let value = (i as u32).to_ne_bytes();
+            let write_fields = vec![(0, value.as_slice())];
+
+            unsafe {
+                buffer.write_record(i, record_size, &write_fields);
+            }
+        }
+
+        let iter = buffer.record_iter(record_size);
+
+        for (i, record) in iter.enumerate() {
+            // Each record should have exact record size
+            assert_eq!(record.len(), record_size);
+
+            // Record start should be aligned to record size
+            let record_offset = i * record_size;
+            let expected_ptr = unsafe { buffer.as_ptr().add(record_offset) };
+            assert_eq!(record.as_ptr(), expected_ptr);
+
+            // Verify alignment
+            assert_eq!((record.as_ptr() as usize) % record_size, 0);
+        }
+    }
+
+    #[test]
+    fn test_iter_out_of_bounds_safety() {
+        let buffer = TableBuffer::new_zeroed(30); // Not a multiple of 16
+        let record_size = 16;
+
+        // Buffer length is 30, which is not a multiple of 16
+        // Iterator should handle this gracefully
+        let mut iter = buffer.record_iter(record_size);
+
+        // First record should exist (bytes 0..16)
+        assert!(iter.next().is_some());
+
+        // Second record would be bytes 16..32, but buffer only has 30 bytes
+        // Iterator should stop here
+        assert!(iter.next().is_none());
+    }
+
+    #[test]
+    fn test_iter_zip_with_indices() {
+        let mut buffer = TableBuffer::new_zeroed(64); // Exactly 4 records
+        let record_size = 16;
+        let num_records = 4;
+
+        // Write multiple records
+        for i in 0..num_records {
+            let value = (100 + i as u32).to_ne_bytes();
+            let write_fields = vec![(0, value.as_slice())];
+
+            unsafe {
+                buffer.write_record(i, record_size, &write_fields);
+            }
+        }
+
+        let iter = buffer.record_iter(record_size);
+
+        for (i, record) in iter.enumerate() {
+            // Verify index matches record position
+            let expected_offset = i * record_size;
+            let expected_ptr = unsafe { buffer.as_ptr().add(expected_offset) };
+            assert_eq!(record.as_ptr(), expected_ptr);
+
+            // Verify data matches
+            let record_u32 = unsafe { std::ptr::read_unaligned(record.as_ptr() as *const u32) };
+            assert_eq!(record_u32, 100 + i as u32);
+        }
+    }
+
+    #[test]
+    fn test_iter_concurrent_snapshot_concept() {
+        // This test demonstrates the concept of iterator holding a snapshot
+        // Actual ArcSwap implementation would be in a higher-level layer
+        use std::sync::Arc;
+
+        let buffer = TableBuffer::new_zeroed(64);
+        let record_size = 16;
+
+        // Create an Arc reference to simulate snapshot
+        let arc_buffer = Arc::new(buffer);
+
+        // Get a reference to the buffer data
+        let snapshot_ref = Arc::clone(&arc_buffer);
+        let iter = snapshot_ref.record_iter(record_size);
+
+        // Even if original Arc is dropped, snapshot still holds reference
+        drop(arc_buffer);
+
+        // Iterator should still work because snapshot_ref holds the reference
+        let count = iter.count();
+        assert_eq!(count, 4); // 64 / 16 = 4 records
+
+        // snapshot_ref goes out of scope here, buffer will be dropped
+    }
+
+    #[test]
+    #[should_panic(expected = "record_size must be > 0")]
+    fn test_iter_zero_sized_record() {
+        let buffer = TableBuffer::new_zeroed(64);
+        let record_size = 0;
+
+        // With record size 0, iterator should panic
+        let mut iter = buffer.record_iter(record_size);
+        let _ = iter.next();
+    }
+
+    #[test]
+    fn test_iter_max_capacity() {
+        // Test with maximum number of records that fit in buffer
+        let capacity = 1024;
+        let record_size = 16;
+        let expected_records = capacity / record_size; // 64 records
+
+        let buffer = TableBuffer::new_zeroed(capacity);
+        let iter = buffer.record_iter(record_size);
+
+        let count = iter.count();
+        assert_eq!(count, expected_records);
+    }
+
+    #[test]
+    fn test_iter_partial_buffer() {
+        // Test with buffer that has data only in part of it
+        let mut buffer = TableBuffer::new_zeroed(128);
+        let record_size = 16;
+
+        // Only write to first 2 records
+        for i in 0..2 {
+            let value = (i as u32).to_ne_bytes();
+            let write_fields = vec![(0, value.as_slice())];
+
+            unsafe {
+                buffer.write_record(i, record_size, &write_fields);
+            }
+        }
+
+        // Buffer has capacity for 8 records (128 / 16), but only 2 have data
+        // Iterator should still iterate over all 8 records (including zeroed ones)
+        let iter = buffer.record_iter(record_size);
+        let count = iter.count();
+        assert_eq!(count, 8); // All records in buffer, not just initialized ones
     }
 }
