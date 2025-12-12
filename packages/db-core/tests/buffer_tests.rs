@@ -76,7 +76,7 @@ fn alignment() {
 
     // Optional: check for cache-line alignment (64 bytes)
     // This depends on Vec<u8> allocation behavior
-    let _is_cache_aligned = ptr as usize % 64 == 0;
+    let _is_cache_aligned = (ptr as usize).is_multiple_of(64);
     // We don't assert this as it's implementation dependent
 }
 
@@ -323,8 +323,8 @@ fn safety_invariants_as_ptr() {
 
     // We should be able to read initialized bytes
     unsafe {
-        for i in 0..8 {
-            assert_eq!(*ptr.add(i), data[i as usize]);
+        for (i, &byte) in data.iter().enumerate().take(8) {
+            assert_eq!(*ptr.add(i), byte);
         }
     }
 
@@ -392,7 +392,7 @@ fn test_write_single_record() {
     unsafe {
         assert_eq!(buffer.read_at::<u32>(0), 42);
         assert!((buffer.read_at::<f32>(4) - 3.5).abs() < 0.0001);
-        assert_eq!(buffer.read_at::<bool>(8), true);
+        assert!(buffer.read_at::<bool>(8));
     }
 
     // Record size matches calculated size (9 bytes for data, but we allocated 24 for test)
@@ -474,7 +474,7 @@ fn test_write_partial_record() {
     unsafe {
         assert_eq!(buffer.read_at::<u32>(0), 1); // unchanged
         assert_eq!(buffer.read_at::<u16>(4), 5); // unchanged
-        assert_eq!(buffer.read_at::<bool>(6), false); // updated
+        assert!(!buffer.read_at::<bool>(6)); // updated
     }
 
     // Verify partial write didn't corrupt adjacent fields
@@ -575,8 +575,8 @@ fn test_all_scalar_types() {
     let u16_val: u16 = 0x1234;
     let i32_val: i32 = -123456;
     let i64_val: i64 = 0x0123456789ABCDEF;
-    let f32_val: f32 = 3.14159;
-    let f64_val: f64 = 2.71828;
+    let f32_val: f32 = std::f32::consts::PI;
+    let f64_val: f64 = std::f64::consts::E;
     let bool_val: bool = true;
 
     // Store byte arrays to avoid temporary value issues
@@ -606,9 +606,9 @@ fn test_all_scalar_types() {
         assert_eq!(buffer.read_unaligned_at::<u16>(1), 0x1234);
         assert_eq!(buffer.read_at::<i32>(4), -123456);
         assert_eq!(buffer.read_at::<i64>(8), 0x0123456789ABCDEF);
-        assert!((buffer.read_at::<f32>(16) - 3.14159).abs() < 0.0001);
-        assert!((buffer.read_unaligned_at::<f64>(20) - 2.71828).abs() < 0.0001);
-        assert_eq!(buffer.read_at::<bool>(28), true);
+        assert!((buffer.read_at::<f32>(16) - std::f32::consts::PI).abs() < 0.0001);
+        assert!((buffer.read_unaligned_at::<f64>(20) - std::f64::consts::E).abs() < 0.0001);
+        assert!(buffer.read_at::<bool>(28));
     }
 }
 

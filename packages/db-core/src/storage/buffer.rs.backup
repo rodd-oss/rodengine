@@ -44,15 +44,81 @@ impl TableBuffer {
         }
     }
 
-    /// Attempts to create a new TableBuffer with the specified capacity.
+    /// Writes a record (multiple fields) into the buffer at the specified record index with bounds checking.
     ///
-    /// Returns `Ok(TableBuffer)` if allocation succeeds, or `Err` if allocation
-    /// fails (e.g., out of memory).
-    pub fn try_with_capacity(capacity: usize) -> Result<Self, std::collections::TryReserveError> {
-        let mut data = Vec::new();
-        data.try_reserve_exact(capacity)?;
-        Ok(Self { data })
+    /// Returns `Ok(())` if the write succeeds, or `Err` if any bounds check fails.
+    ///
+    /// # Parameters
+    ///
+    /// - `record_index`: The index of the record to write (0-based)
+    /// - `record_size`: The size of each record in bytes
+    /// - `fields`: A slice of tuples containing field offsets and values
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if:
+    /// - `record_index * record_size` would overflow
+    /// - `record_index * record_size + record_size` exceeds buffer capacity
+    /// - Any field offset + field data length exceeds record size
+    /// - Any field write would exceed buffer bounds
+    pub fn write_record_checked(
+        &mut self,
+        record_index: usize,
+        record_size: usize,
+        fields: &[(usize, &[u8])],
+    ) -> Result<(), &'static str> {
+        // Check record offset calculation
+        let record_offset = record_index
+            .checked_mul(record_size)
+            .ok_or("record_index * record_size would overflow")?;
+
+        // Check record fits in buffer
+        let record_end = record_offset
+            .checked_add(record_size)
+            .ok_or("record_offset + record_size would overflow")?;
+        
+        if record_end > self.capacity() {
+            return Err("record would exceed buffer capacity");
+        }
+
+        // Check each field
+        for &(field_offset, field_data) in fields {
+            // Check field offset within record
+            if field_offset >= record_size {
+                return Err("field offset exceeds record size");
+            }
+
+            // Check field data fits within record
+            let field_end = field_offset
+                .checked_add(field_data.len())
+                .ok_or("field_offset + field_data.len() would overflow")?;
+            
+            if field_end > record_size {
+                return Err("field data would exceed record bounds");
+            }
+
+            // Check field fits in buffer
+            let target_offset = record_offset
+                .checked_add(field_offset)
+                .ok_or("record_offset + field_offset would overflow")?;
+            
+            let target_end = target_offset
+                .checked_add(field_data.len())
+                .ok_or("target_offset + field_data.len() would overflow")?;
+            
+            if target_end > self.capacity() {
+                return Err("field write would exceed buffer bounds");
+            }
+        }
+
+        // All checks passed, perform the write
+        unsafe {
+            self.write_record(record_index, record_size, fields);
+        }
+        
+        Ok(())
     }
+}
 
     /// Creates a new TableBuffer with zeroed memory of the specified capacity.
     ///
@@ -176,16 +242,6 @@ impl TableBuffer {
     where
         T: Copy,
     {
-        debug_assert_eq!(
-            offset % std::mem::align_of::<T>(),
-            0,
-            "offset must be aligned for type T"
-        );
-        debug_assert!(
-            offset + std::mem::size_of::<T>() <= self.capacity(),
-            "write would exceed buffer capacity"
-        );
-
         let ptr = self.as_mut_ptr().add(offset) as *mut T;
         ptr.write(value);
     }
@@ -205,11 +261,6 @@ impl TableBuffer {
     where
         T: Copy,
     {
-        debug_assert!(
-            offset + std::mem::size_of::<T>() <= self.capacity(),
-            "write would exceed buffer capacity"
-        );
-
         let ptr = self.as_mut_ptr().add(offset) as *mut T;
         ptr.write_unaligned(value);
     }
@@ -226,16 +277,6 @@ impl TableBuffer {
     where
         T: Copy,
     {
-        debug_assert_eq!(
-            offset % std::mem::align_of::<T>(),
-            0,
-            "offset must be aligned for type T"
-        );
-        debug_assert!(
-            offset + std::mem::size_of::<T>() <= self.capacity(),
-            "read would exceed buffer capacity"
-        );
-
         let ptr = self.as_ptr().add(offset) as *const T;
         ptr.read()
     }
@@ -254,11 +295,6 @@ impl TableBuffer {
     where
         T: Copy,
     {
-        debug_assert!(
-            offset + std::mem::size_of::<T>() <= self.len(),
-            "read would exceed initialized buffer length"
-        );
-
         let ptr = self.as_ptr().add(offset) as *const T;
         ptr.read_unaligned()
     }
@@ -291,81 +327,6 @@ impl TableBuffer {
             let target_ptr = self.as_mut_ptr().add(target_offset);
             std::ptr::copy_nonoverlapping(field_data.as_ptr(), target_ptr, field_data.len());
         }
-    }
-
-    /// Writes a record (multiple fields) into the buffer at the specified record index with bounds checking.
-    ///
-    /// Returns `Ok(())` if the write succeeds, or `Err` if any bounds check fails.
-    ///
-    /// # Parameters
-    ///
-    /// - `record_index`: The index of the record to write (0-based)
-    /// - `record_size`: The size of each record in bytes
-    /// - `fields`: A slice of tuples containing field offsets and values
-    ///
-    /// # Errors
-    ///
-    /// Returns `Err` if:
-    /// - `record_index * record_size` would overflow
-    /// - `record_index * record_size + record_size` exceeds buffer capacity
-    /// - Any field offset + field data length exceeds record size
-    /// - Any field write would exceed buffer bounds
-    pub fn write_record_checked(
-        &mut self,
-        record_index: usize,
-        record_size: usize,
-        fields: &[(usize, &[u8])],
-    ) -> Result<(), &'static str> {
-        // Check record offset calculation
-        let record_offset = record_index
-            .checked_mul(record_size)
-            .ok_or("record_index * record_size would overflow")?;
-
-        // Check record fits in buffer
-        let record_end = record_offset
-            .checked_add(record_size)
-            .ok_or("record_offset + record_size would overflow")?;
-
-        if record_end > self.capacity() {
-            return Err("record would exceed buffer capacity");
-        }
-
-        // Check each field
-        for &(field_offset, field_data) in fields {
-            // Check field offset within record
-            if field_offset >= record_size {
-                return Err("field offset exceeds record size");
-            }
-
-            // Check field data fits within record
-            let field_end = field_offset
-                .checked_add(field_data.len())
-                .ok_or("field_offset + field_data.len() would overflow")?;
-
-            if field_end > record_size {
-                return Err("field data would exceed record bounds");
-            }
-
-            // Check field fits in buffer
-            let target_offset = record_offset
-                .checked_add(field_offset)
-                .ok_or("record_offset + field_offset would overflow")?;
-
-            let target_end = target_offset
-                .checked_add(field_data.len())
-                .ok_or("target_offset + field_data.len() would overflow")?;
-
-            if target_end > self.capacity() {
-                return Err("field write would exceed buffer bounds");
-            }
-        }
-
-        // All checks passed, perform the write
-        unsafe {
-            self.write_record(record_index, record_size, fields);
-        }
-
-        Ok(())
     }
 }
 
@@ -461,8 +422,8 @@ mod tests {
             buffer.write_at::<i8>(0, -42);
             buffer.write_at::<u16>(2, 0x1234);
             buffer.write_at::<i32>(4, -123456);
-            buffer.write_at::<f32>(8, std::f32::consts::PI);
-            buffer.write_at::<f64>(16, std::f64::consts::E);
+            buffer.write_at::<f32>(8, 3.14159);
+            buffer.write_at::<f64>(16, 2.71828);
             buffer.write_at::<bool>(24, true);
             buffer.write_at::<bool>(25, false);
 
@@ -470,10 +431,10 @@ mod tests {
             assert_eq!(buffer.read_at::<i8>(0), -42);
             assert_eq!(buffer.read_at::<u16>(2), 0x1234);
             assert_eq!(buffer.read_at::<i32>(4), -123456);
-            assert!((buffer.read_at::<f32>(8) - std::f32::consts::PI).abs() < 0.0001);
-            assert!((buffer.read_at::<f64>(16) - std::f64::consts::E).abs() < 0.0001);
-            assert!(buffer.read_at::<bool>(24));
-            assert!(!buffer.read_at::<bool>(25));
+            assert!((buffer.read_at::<f32>(8) - 3.14159).abs() < 0.0001);
+            assert!((buffer.read_at::<f64>(16) - 2.71828).abs() < 0.0001);
+            assert_eq!(buffer.read_at::<bool>(24), true);
+            assert_eq!(buffer.read_at::<bool>(25), false);
         }
     }
 
@@ -508,13 +469,13 @@ mod tests {
 
         // Write a record with multiple fields at different offsets
         let id_data = 0x12345678u32.to_ne_bytes();
-        let score_data = std::f64::consts::PI.to_ne_bytes();
+        let score_data = 3.14159f64.to_ne_bytes();
         let active_data = [1u8]; // true as u8
 
         let fields = vec![
-            (0, id_data.as_slice()),
-            (8, score_data.as_slice()),
-            (16, active_data.as_slice()),
+            (0, id_data.as_slice()),      // id at offset 0
+            (8, score_data.as_slice()),   // score at offset 8 (aligned)
+            (16, active_data.as_slice()), // active at offset 16
         ];
 
         unsafe {
@@ -524,8 +485,8 @@ mod tests {
         // Verify all fields were written correctly
         unsafe {
             assert_eq!(buffer.read_at::<u32>(0), 0x12345678);
-            assert!((buffer.read_at::<f64>(8) - std::f64::consts::PI).abs() < 0.0001);
-            assert!(buffer.read_at::<bool>(16));
+            assert!((buffer.read_at::<f64>(8) - 3.14159).abs() < 0.0001);
+            assert_eq!(buffer.read_at::<bool>(16), true);
         }
     }
 
@@ -539,7 +500,10 @@ mod tests {
             let id_data = (1000 + i as u32).to_ne_bytes();
             let value_data = (i as f32 * 10.0).to_ne_bytes();
 
-            let fields = vec![(0, id_data.as_slice()), (4, value_data.as_slice())];
+            let fields = vec![
+                (0, id_data.as_slice()),    // id at offset 0
+                (4, value_data.as_slice()), // value at offset 4
+            ];
 
             unsafe {
                 buffer.write_record(i, record_size, &fields);
@@ -554,9 +518,84 @@ mod tests {
                 assert!(
                     (buffer.read_at::<f32>(record_offset + 4) - (i as f32 * 10.0)).abs() < 0.0001
                 );
-            }
         }
     }
+
+    /// Writes a record (multiple fields) into the buffer at the specified record index with bounds checking.
+    ///
+    /// Returns `Ok(())` if the write succeeds, or `Err` if any bounds check fails.
+    ///
+    /// # Parameters
+    ///
+    /// - `record_index`: The index of the record to write (0-based)
+    /// - `record_size`: The size of each record in bytes
+    /// - `fields`: A slice of tuples containing field offsets and values
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if:
+    /// - `record_index * record_size` would overflow
+    /// - `record_index * record_size + record_size` exceeds buffer capacity
+    /// - Any field offset + field data length exceeds record size
+    /// - Any field write would exceed buffer bounds
+    pub fn write_record_checked(
+        &mut self,
+        record_index: usize,
+        record_size: usize,
+        fields: &[(usize, &[u8])],
+    ) -> Result<(), &'static str> {
+        // Check record offset calculation
+        let record_offset = record_index
+            .checked_mul(record_size)
+            .ok_or("record_index * record_size would overflow")?;
+
+        // Check record fits in buffer
+        let record_end = record_offset
+            .checked_add(record_size)
+            .ok_or("record_offset + record_size would overflow")?;
+        
+        if record_end > self.capacity() {
+            return Err("record would exceed buffer capacity");
+        }
+
+        // Check each field
+        for &(field_offset, field_data) in fields {
+            // Check field offset within record
+            if field_offset >= record_size {
+                return Err("field offset exceeds record size");
+            }
+
+            // Check field data fits within record
+            let field_end = field_offset
+                .checked_add(field_data.len())
+                .ok_or("field_offset + field_data.len() would overflow")?;
+            
+            if field_end > record_size {
+                return Err("field data would exceed record bounds");
+            }
+
+            // Check field fits in buffer
+            let target_offset = record_offset
+                .checked_add(field_offset)
+                .ok_or("record_offset + field_offset would overflow")?;
+            
+            let target_end = target_offset
+                .checked_add(field_data.len())
+                .ok_or("target_offset + field_data.len() would overflow")?;
+            
+            if target_end > self.capacity() {
+                return Err("field write would exceed buffer bounds");
+            }
+        }
+
+        // All checks passed, perform the write
+        unsafe {
+            self.write_record(record_index, record_size, fields);
+        }
+        
+        Ok(())
+    }
+}
 
     #[test]
     fn test_write_record_partial_update() {
@@ -565,7 +604,7 @@ mod tests {
 
         // First write a complete record
         let id_data = 0x12345678u32.to_ne_bytes();
-        let score_data = std::f64::consts::PI.to_ne_bytes();
+        let score_data = 3.14159f64.to_ne_bytes();
         let active_data = [1u8]; // true as u8
 
         let initial_fields = vec![
@@ -579,7 +618,7 @@ mod tests {
         }
 
         // Now update just the score field
-        let new_score_data = std::f64::consts::E.to_ne_bytes();
+        let new_score_data = 2.71828f64.to_ne_bytes();
         let update_fields = vec![(8, new_score_data.as_slice())];
 
         unsafe {
@@ -589,8 +628,8 @@ mod tests {
         // Verify score was updated, other fields unchanged
         unsafe {
             assert_eq!(buffer.read_at::<u32>(0), 0x12345678); // unchanged
-            assert!((buffer.read_at::<f64>(8) - std::f64::consts::E).abs() < 0.0001); // updated
-            assert!(buffer.read_at::<bool>(16)); // unchanged
+            assert!((buffer.read_at::<f64>(8) - 2.71828).abs() < 0.0001); // updated
+            assert_eq!(buffer.read_at::<bool>(16), true); // unchanged
         }
     }
 
@@ -676,130 +715,6 @@ mod tests {
         // Verify untouched bytes remain zero
         for i in 3..record_size {
             assert_eq!(buffer.as_slice()[i], 0);
-        }
-    }
-
-    #[test]
-    fn test_write_record_checked_success() {
-        let mut buffer = TableBuffer::new_zeroed(128);
-        let record_size = 16;
-
-        let id_data = 42u32.to_ne_bytes();
-        let score_data = 3.5f32.to_ne_bytes();
-
-        let fields = vec![(0, id_data.as_slice()), (4, score_data.as_slice())];
-
-        // Should succeed with bounds checking
-        let result = buffer.write_record_checked(0, record_size, &fields);
-        assert!(result.is_ok());
-
-        // Verify data was written
-        unsafe {
-            assert_eq!(buffer.read_at::<u32>(0), 42);
-            assert!((buffer.read_at::<f32>(4) - 3.5).abs() < 0.0001);
-        }
-    }
-
-    #[test]
-    fn test_write_record_checked_out_of_bounds_index() {
-        let mut buffer = TableBuffer::new_zeroed(64);
-        let record_size = 16;
-
-        let field_data = 0x12345678u32.to_ne_bytes();
-        let fields = vec![(0, field_data.as_slice())];
-
-        // Try to write at index that would exceed buffer (64 / 16 = 4 records max, index 4 is out of bounds)
-        let result = buffer.write_record_checked(4, record_size, &fields);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("exceed buffer capacity"));
-    }
-
-    #[test]
-    fn test_write_record_checked_out_of_bounds_offset() {
-        let mut buffer = TableBuffer::new_zeroed(64);
-        let record_size = 16;
-
-        let field_data = 0x12345678u32.to_ne_bytes();
-        // Field offset 20 exceeds record size 16
-        let fields = vec![(20, field_data.as_slice())];
-
-        let result = buffer.write_record_checked(0, record_size, &fields);
-        assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .contains("field offset exceeds record size"));
-    }
-
-    #[test]
-    fn test_write_record_checked_field_exceeds_record() {
-        let mut buffer = TableBuffer::new_zeroed(64);
-        let record_size = 8;
-
-        // Create a field that's too large for the record
-        let large_data = vec![0u8; 16]; // 16 bytes > record size 8
-        let fields = vec![(0, large_data.as_slice())];
-
-        let result = buffer.write_record_checked(0, record_size, &fields);
-        assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .contains("field data would exceed record bounds"));
-    }
-
-    #[test]
-    fn test_write_record_checked_overflow_calculation() {
-        let mut buffer = TableBuffer::new_zeroed(1024);
-
-        // Test overflow in record_index * record_size
-        let record_index = usize::MAX;
-        let record_size = 2;
-        let field_data = [0u8; 1];
-        let fields = vec![(0, field_data.as_slice())];
-
-        let result = buffer.write_record_checked(record_index, record_size, &fields);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("overflow"));
-    }
-
-    #[test]
-    fn test_write_record_checked_null_pointer_safety() {
-        // Even with zero capacity, should handle gracefully
-        let mut buffer = TableBuffer::new_zeroed(0);
-        let record_size = 16;
-        let field_data = [0u8; 4];
-        let fields = vec![(0, field_data.as_slice())];
-
-        let result = buffer.write_record_checked(0, record_size, &fields);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("exceed buffer capacity"));
-    }
-
-    #[test]
-    fn test_write_record_checked_overlap_detection() {
-        let mut buffer = TableBuffer::new_zeroed(128);
-        let record_size = 32;
-
-        // First write a record
-        let field1_data = 0x11111111u32.to_ne_bytes();
-        let fields1 = vec![(0, field1_data.as_slice())];
-
-        let result1 = buffer.write_record_checked(0, record_size, &fields1);
-        assert!(result1.is_ok());
-
-        // Try to write overlapping record (incorrect record size calculation)
-        // If record_size were incorrectly calculated as 16 instead of 32,
-        // record 1 would overlap with record 0
-        let field2_data = 0x22222222u32.to_ne_bytes();
-        let fields2 = vec![(0, field2_data.as_slice())];
-
-        // This should succeed because we're using correct record_size
-        let result2 = buffer.write_record_checked(1, record_size, &fields2);
-        assert!(result2.is_ok());
-
-        // Verify both records exist
-        unsafe {
-            assert_eq!(buffer.read_at::<u32>(0), 0x11111111);
-            assert_eq!(buffer.read_at::<u32>(32), 0x22222222); // record 1 at offset 32
         }
     }
 }

@@ -694,7 +694,7 @@ mod tests {
 
         // The panic version should panic
         let result = std::panic::catch_unwind(|| {
-            calculate_record_size(&[field.clone()]);
+            calculate_record_size(std::slice::from_ref(&field));
         });
         assert!(result.is_err());
 
