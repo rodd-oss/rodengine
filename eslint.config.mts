@@ -14,6 +14,9 @@ import eslintConfigPrettier from "eslint-config-prettier/flat";
 
 export default defineConfig([
   {
+    ignores: ["target/**", "node_modules/**"],
+  },
+  {
     files: ["**/*.{js,mjs,cjs,ts,mts,cts,vue}"],
     plugins: { js },
     extends: ["js/recommended"],
@@ -22,6 +25,13 @@ export default defineConfig([
   {
     files: ["**/*.ts"],
     extends: [tseslint.configs.strictTypeChecked],
+    languageOptions: {
+      parser: tseslint.parser,
+      parserOptions: {
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
   },
   {
     files: ["**/*.vue"],

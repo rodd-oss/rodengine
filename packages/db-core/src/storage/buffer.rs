@@ -1930,12 +1930,12 @@ mod tests {
         let mut front_to_back = Vec::new();
         let mut back_to_front = Vec::new();
 
-        while let Some(record) = iter.next() {
+        for record in iter.by_ref() {
             front_to_back.push(record);
         }
 
         let mut iter = buffer.record_iter(record_size);
-        while let Some(record) = iter.next_back() {
+        for record in iter.by_ref().rev() {
             back_to_front.push(record);
         }
 
