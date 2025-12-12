@@ -2,8 +2,8 @@
 //!
 //! This crate handles binary snapshots to disk and JSON schema serialization.
 
-pub mod snapshot;
 pub mod serialization;
+pub mod snapshot;
 
 #[cfg(test)]
 mod tests {

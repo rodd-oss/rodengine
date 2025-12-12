@@ -3,8 +3,8 @@
 //! This crate provides the foundational storage layer with zero-copy access,
 //! cache-efficient layout, and atomic operations.
 
-pub mod storage;
 pub mod schema;
+pub mod storage;
 
 #[cfg(test)]
 mod tests {

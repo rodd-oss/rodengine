@@ -6,6 +6,8 @@
 - **Test**: `bun test` (Bun's built-in test runner). Single test: `bun test <file>` or `bun test --test-name-pattern <pattern>`
 - **Build**: No build script yet. For workspaces, run `bun build` per package.
 - **Rust**: `cargo test` (all tests), `cargo build`. Single test: `cargo test <test_name>`
+- **Rust lint**: `cargo clippy --workspace -- -D warnings` (run clippy with all warnings as errors)
+- **Rust format**: `cargo fmt -- --check` (check formatting), `cargo fmt` (apply formatting)
 - **Go**: `go test ./...` (no Go code yet). Workspace defined in `go.work`.
 
 ## Code Style & Notes

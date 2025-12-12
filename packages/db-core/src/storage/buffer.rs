@@ -197,11 +197,11 @@ mod tests {
     fn test_deref() {
         let mut buffer = TableBuffer::new_with_capacity(10);
         buffer.extend_from_slice(&[1, 2, 3]);
-        
+
         // Test Deref
         assert_eq!(buffer.len(), 3);
         assert_eq!(&buffer[0..3], &[1, 2, 3]);
-        
+
         // Test DerefMut
         buffer[0] = 42;
         assert_eq!(buffer[0], 42);
