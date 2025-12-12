@@ -30,7 +30,7 @@
     "prepare": "husky"
   },
   "lint-staged": {
-    "**/*.{js,mjs,cjs,ts,mts,cts,vue}": [
+    "**/*.{js,mjs,cjs,ts,mts,cts,vue,json,jsonc,json5,md,css}": [
       "prettier --list-different",
       "eslint"
     ]
