@@ -1,5 +1,9 @@
 # Test Plan for Task `lf_1`: Read API with ArcSwap::load
 
+## Context
+
+Rust implementation of in-memory relational database. Implements TRD requirement: "Atomic operations via ArcSwap on buffers; lock-free reads and writes." ArcSwap load enables lock‑free reads for REST API endpoints.
+
 ## 1. Basic Functionality Tests
 
 - **`test_load_returns_valid_reference`**: Verifies `ArcSwap::load()` returns a non-null reference to the buffer
@@ -47,3 +51,17 @@
 - Memory pressure causing Arc cloning failures
 - Thread termination while holding loaded reference
 - Nested loads (loading buffer within loaded buffer context)
+
+## 6. REST API Integration Tests
+
+- **`test_rest_api_read_endpoint_uses_arcswap`**: Verify GET /tables/{name}/records/{id} uses ArcSwap::load() for lock‑free reads
+- **`test_concurrent_rest_reads_with_writes`**: Multiple REST API read requests while writes occur via buffer swaps
+- **`test_rest_api_response_consistency`**: REST responses reflect consistent buffer state from ArcSwap load
+- **`test_rest_api_read_performance`**: Measure read latency to ensure within tickrate constraints (15-120 Hz)
+- **`test_rest_api_bulk_read_endpoint`**: GET /tables/{name}/records uses ArcSwap load for entire table iteration
+
+## Integration with REST API
+
+- **REST API Reads**: ArcSwap load enables lock‑free reads for REST API endpoints (GET /table/{name}/record/{id}, etc.)
+- **Transaction Atomicity**: Each CRUD operation atomic as per TRD, using ArcSwap atomic swaps
+- **Event Loop**: Reads complete within tickrate constraints (15-120 Hz) without blocking

@@ -2,7 +2,7 @@
 
 ## Overview
 
-Unit tests for defining an RPC protocol over HTTP for the relational in‑memory database. The protocol must handle remote procedure calls, support JSON‑RPC 2.0 or a custom format, and integrate with the database's event loop and transaction system.
+Unit tests for defining an RPC protocol over HTTP for the relational in‑memory database. The protocol must handle remote procedure calls, support JSON‑RPC 2.0 or a custom format, and integrate with the database's event loop and transaction system. RPC is an additional capability alongside the primary REST API for schema and data operations as specified in TRD.
 
 ## Test Categories
 

@@ -1,5 +1,9 @@
 # Test Plan for `task_sj_1`: Serialize entire schema (tables, fields, relations) to JSON file
 
+## Context
+
+Rust implementation of in-memory relational database. JSON schema serialization implements TRD requirement: "JSON file for schema definition." Schema serialization is used by REST API endpoints for schema operations.
+
 ## 1. Test Names & Descriptions
 
 | Test Name                                         | Brief Description                                                                                        |
@@ -65,5 +69,25 @@
 | **No panics**           | Serialization never panics, even on empty or malformed internal state (validation should happen earlier).                      |
 | **Memory safety**       | Serialization must not trigger undefined behavior (no unsafe code in the serialization path).                                  |
 | **Performance**         | Serialization of a typical schema (dozens of tables) completes within a few milliseconds (benchmark).                          |
+
+## 5. REST API Integration Tests
+
+| Test Name                                      | Brief Description                                                            |
+| ---------------------------------------------- | ---------------------------------------------------------------------------- |
+| `test_rest_api_get_schema_endpoint`            | Verify GET /schema returns valid JSON schema matching internal state         |
+| `test_rest_api_schema_endpoint_content_type`   | Ensure endpoint returns correct Content-Type: application/json               |
+| `test_rest_api_schema_with_etag`               | Schema endpoint includes ETag header for caching                             |
+| `test_rest_api_schema_concurrent_modification` | GET /schema while schema is being modified returns consistent snapshot       |
+| `test_rest_api_schema_performance`             | Schema endpoint responds within tickrate constraints (15-120 Hz)             |
+| `test_rest_api_schema_error_handling`          | Proper HTTP error codes for schema serialization failures                    |
+| `test_rest_api_schema_version_header`          | Schema response includes version metadata                                    |
+| `test_rest_api_schema_download_file`           | GET /schema/download returns schema as downloadable file with proper headers |
+
+## 6. Integration with REST API & Runtime
+
+- **REST API Endpoints**: Schema serialization used by `GET /schema` endpoint to export schema as JSON
+- **Event Loop Integration**: Schema serialization must complete within tickrate constraints (15-120 Hz) when triggered via API
+- **Concurrency**: Serialization uses `ArcSwap` snapshot for lock‑free reads as per TRD
+- **JSON Schema Definition**: Output conforms to TRD requirement for JSON file schema definition
 
 **Implementation note**: Use `serde` with custom serializers for `Field`, `Table`, `Relation`. Unit tests should mock the file system (e.g., with `tempfile` crate) to avoid side effects. Integration tests can write to a temporary directory and verify file contents.

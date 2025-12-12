@@ -4,6 +4,14 @@
 
 Unit tests for implementing table creation/destruction (add/remove from database catalog) in the relational in-memory database.
 
+## TRD Alignment Notes
+
+- **Catalog Storage**: Table catalog must use ArcSwap (§4) for lock‑free concurrent access (concurrency tests deferred)
+- **REST API**: Catalog operations correspond to REST endpoints `/tables` (POST, DELETE) (§5)
+- **JSON Schema**: Table definitions persisted as JSON schema files (§5) (persistence deferred to later tasks)
+- **Memory Safety**: Deleting tables must drop `Vec<u8>` buffers to prevent leaks (§4)
+- **Validation**: Table name validation aligns with relational model constraints (§3)
+
 ## Core Unit Tests
 
 ### 1. `create_table_success`

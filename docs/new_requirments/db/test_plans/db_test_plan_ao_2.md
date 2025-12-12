@@ -2,7 +2,7 @@
 
 ## Overview
 
-Tests for implementing transaction log to rollback partial failures in relational in-memory database. Database uses Vec<u8> storage with tight packing, zero-copy, atomic operations via ArcSwap, and lock-free concurrency.
+Tests for implementing transaction log to rollback partial failures in Rust relational in-memory database. Database uses Vec<u8> storage with tight packing, zero-copy, atomic operations via ArcSwap, and lock-free concurrency. Transaction log implements TRD's atomic transaction requirement for CRUD operations exposed via REST API.
 
 ## Test Categories
 

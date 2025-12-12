@@ -2,7 +2,7 @@
 
 ## Context
 
-This task follows task_pp_1 (parallel iteration API using rayon) and focuses on optimizing cache locality by aligning chunk sizes to cache lines (typically 64 bytes on modern CPUs). Part of a relational in-memory database for online games using Vec<u8> storage with tight packing and zero-copy access.
+This task follows task_pp_1 (parallel iteration API using rayon) and focuses on optimizing cache locality by aligning chunk sizes to cache lines (typically 64 bytes on modern CPUs). Part of a Rust relational in-memory database for online games using Vec<u8> storage with tight packing and zero-copy access. Implements TRD's cache efficiency and procedural parallelism requirements.
 
 ## Test Names and Descriptions
 
@@ -92,3 +92,6 @@ This task follows task_pp_1 (parallel iteration API using rayon) and focuses on 
 - Test with both aligned and unaligned buffer starting addresses
 - Include performance benchmarks comparing aligned vs unaligned chunking
 - Ensure tests work with the existing `Vec<u8>` storage buffer and record packing from previous tasks
+- **TRD Integration**: Cache-optimized parallel iteration will be used in custom procedures exposed via REST API
+- **Concurrency Model**: Maintains lock-free reads via ArcSwap as required by TRD
+- **Performance Goals**: Achieves TRD's procedural parallelism across CPU cores while maximizing cache hits

@@ -4,6 +4,14 @@
 **Description**: Register handlers (API request processors, custom procedures) to be invoked each tick.  
 **Context**: Part of relational in-memory database for online games, written in Rust. Event loop runs at 15–120 Hz tickrate.
 
+**TRD Alignment Notes**:
+
+- **Tickrate**: TRD §4 specifies configurable 15–120 Hz event loop for real‑time game integration
+- **Concurrency**: Must use ArcSwap (§4) for lock‑free reads; thread safety assertion already references ArcSwap pattern
+- **REST API**: Handler system must integrate with REST endpoints (§5) for external command processing
+- **Transaction Context**: Custom procedure handlers should respect transaction boundaries (§3) when modifying data
+- **Performance**: Handler registration/invocation overhead must respect event loop timing constraints (§4)
+
 ## 1. Basic Registration Tests
 
 ### `test_register_single_handler`

@@ -2,7 +2,7 @@
 
 ## Overview
 
-Tests for exposing POST /rpc endpoint that dispatches to registered handlers in the relational in-memory database for online games.
+Tests for exposing POST /rpc endpoint that dispatches to registered handlers in the relational in-memory database for online games. RPC complements the primary REST API for schema and data operations as specified in TRD.
 
 ## 1. Basic Functionality Tests
 

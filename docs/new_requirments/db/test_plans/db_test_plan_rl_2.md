@@ -7,6 +7,15 @@
 - Referential integrity must be enforced when a record is deleted.
 - Atomic operations via `ArcSwap`; concurrent reads/writes possible.
 
+## TRD Alignment Notes
+
+- **Storage Model**: Uses `Vec<u8>` row‑oriented buffers with tight packing (§4)
+- **Concurrency**: Atomic operations via ArcSwap for lock‑free reads/writes (§4)
+- **Referential Integrity**: Enforces relational constraints per TRD §3
+- **REST API**: Relation management via `/relations` endpoints (§5)
+- **JSON Schema**: Relations persisted in JSON schema files (§5)
+- **Performance**: Integrity checks must be O(1) or O(log n) using indexes
+
 ## Assumptions
 
 - `Relation` struct exists (from task RL‑1) with fields: `id`, `source_table`, `destination_table`, `source_field`, `destination_field`.

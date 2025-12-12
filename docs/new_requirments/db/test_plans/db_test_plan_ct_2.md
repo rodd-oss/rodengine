@@ -19,7 +19,7 @@
 - Duplicate registration is an error (or overwrites) – decide based on design.
 - Nested composites (composite containing another composite) are allowed.
 - Zero‑sized components (e.g., unit type) are allowed.
-- The registry is thread‑safe (interior mutability via `RwLock` or `DashMap`).
+- The registry is thread‑safe with lock‑free reads via `ArcSwap`; updates are performed by atomically swapping a new version of the registry.
 
 ## Test Categories
 
@@ -132,14 +132,14 @@ Composite field that itself contains nested composites.
 ### 7. Concurrency & Thread Safety
 
 **test_concurrent_registration**  
-Multiple threads registering different composites simultaneously.
+Multiple threads registering different composites simultaneously, using atomic swaps via ArcSwap.
 
-- Expect: No data races; all definitions retrievable afterward.
+- Expect: No data races; all definitions retrievable afterward with atomic visibility.
 
 **test_concurrent_read_while_write**  
-One thread registers a composite while another reads an existing composite.
+One thread registers a composite while another reads an existing composite, using ArcSwap for atomic updates.
 
-- Expect: Reader sees consistent state (no invalid pointers).
+- Expect: Reader sees consistent state (no invalid pointers) and lock-free reads via ArcSwap.
 
 ### 8. Edge Cases & Stress
 
@@ -202,7 +202,7 @@ Composite alignment is at least 1.
 
 ## Implementation Notes
 
-- Use `cargo test` with `--test-threads=1` for concurrency tests (or use `std::sync` barriers).
+- Use `cargo test` with `--test-threads=1` for concurrency tests (or use `std::sync` barriers). Ensure ArcSwap atomic swaps are tested for lock-free reads.
 - Mock the registry without actual storage buffer for unit tests.
 - For integration tests, need table and storage infrastructure (tasks SL‑1 … SL‑5).
 - Use `#[should_panic]` for panic tests, `Result` for error tests.

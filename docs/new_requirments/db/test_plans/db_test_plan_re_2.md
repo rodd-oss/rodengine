@@ -1,5 +1,9 @@
 # Test Plan for task_re_2: Validate snapshot integrity (checksum, version)
 
+## Context
+
+Rust implementation of in-memory relational database. Snapshot validation ensures integrity of binary snapshots as per TRD's binary format for disk snapshots. Validation is used during REST API snapshot loading operations.
+
 ## 1. **Test: valid_snapshot_passes_validation**
 
 **Description**: Verify that a correctly generated snapshot with proper checksum and version passes validation.
@@ -83,6 +87,13 @@
 **Verifies**: Clean error reporting and system state after validation failure.
 **Edge cases**: Partial validation before failure, resource cleanup.
 **Assertions**: System returns to clean state; appropriate error logged.
+
+## 13. **Test: validation_via_rest_api**
+
+**Description**: Validate snapshot via REST API endpoint before loading.
+**Verifies**: Snapshot validation integrated with REST API for schema and data operations as per TRD.
+**Edge cases**: Invalid snapshot uploaded via REST API.
+**Assertions**: Returns appropriate HTTP status (200 OK for valid, 400 for invalid).
 
 ## Key Implementation Considerations
 

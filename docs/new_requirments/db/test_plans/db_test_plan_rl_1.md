@@ -4,6 +4,15 @@
 
 Unit tests for the `Relation` struct that references source/destination tables and field mapping. Part of a relational in-memory database for online games (Rust implementation).
 
+## TRD Alignment Notes
+
+- **Relation Model**: Supports relational integrity constraints as per TRD §3
+- **Serialization**: Relations must be serializable for JSON schema persistence (§5)
+- **Catalog Integration**: Relation definitions stored in catalog alongside tables
+- **Concurrency**: Relation metadata should use ArcSwap (§4) for lock‑free reads
+- **REST API**: Relation endpoints (`/relations`) for CRUD operations (§5)
+- **Type Safety**: Field type matching enforced by schema validation
+
 ## Test Cases
 
 ### 1. Basic Struct Construction

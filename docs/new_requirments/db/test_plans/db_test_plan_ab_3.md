@@ -2,7 +2,7 @@
 
 ## Overview
 
-Unit tests for implementing copy-on-write strategy for modifications in the relational in-memory database. Part of the ArcSwap buffer feature in the concurrency phase.
+Unit tests for implementing copy-on-write strategy for modifications in the relational in-memory database. Part of the ArcSwap buffer feature in the concurrency phase. Copy-on-write uses ArcSwap atomic swaps to ensure lock-free reads as required by TRD.
 
 ## 1. Core Functionality Tests
 
@@ -62,7 +62,7 @@ Unit tests for implementing copy-on-write strategy for modifications in the rela
 
 ### test_atomic_buffer_swap
 
-**Verifies**: Buffer swap is atomic - readers never see partially written state.
+**Verifies**: Buffer swap via ArcSwap is atomic - readers never see partially written state, ensuring lock-free reads as per TRD.
 **Edge cases**: Concurrent reads during swap.
 **Assertions**: All readers see either old or new complete buffer.
 

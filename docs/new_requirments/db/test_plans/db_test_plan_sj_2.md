@@ -2,6 +2,10 @@
 
 **Objective**: Validate that a JSON schema file is correctly parsed into the internal Rust structs (`Table`, `Field`, `Relation`) with proper error handling and edge‑case coverage.
 
+## Context
+
+Rust implementation of in-memory relational database. JSON schema deserialization implements TRD requirement: "JSON file for schema definition." Schema loading is used by REST API endpoints for schema operations.
+
 ---
 
 ## 1. Happy‑path tests
@@ -49,6 +53,11 @@
 - **Validation**: After deserialization, the schema passes internal validation (no dangling references, valid offsets, etc.).
 - **Idempotency**: Deserializing the same JSON twice produces the same in‑memory structures (no side‑effects).
 
----
+## 5. Integration with REST API & Runtime
+
+- **REST API Endpoints**: Schema deserialization used by `POST /schema` endpoint to load schema from JSON
+- **Event Loop Integration**: Schema loading must complete within tickrate constraints (15-120 Hz) when triggered via API
+- **Concurrency**: Deserialization must work with `ArcSwap` atomic schema updates for lock‑free reads
+- **JSON Schema Definition**: Implements TRD requirement for JSON file schema definition
 
 **Note**: These tests assume the JSON format defined in task SJ‑1 (serialization). The exact shape of the JSON will dictate the specific Serde attributes and validation logic.

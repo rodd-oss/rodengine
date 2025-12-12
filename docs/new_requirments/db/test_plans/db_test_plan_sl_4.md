@@ -1,5 +1,9 @@
 # Test Plan for `task_sl_4`: Write records into buffer at correct offsets via unsafe pointer casting
 
+## Context
+
+Rust implementation of in-memory relational database with `Vec<u8>` storage. Writes are performed on buffer copies with atomic swaps via ArcSwap as per TRD's lock-free concurrency model.
+
 ## 1. Basic Functionality
 
 | Test Name                     | Description                                                                                 | Verification                                                                                              | Edge Cases                                            |
@@ -41,12 +45,12 @@
 | `test_custom_composite_type` | Write a user‑defined composite type (e.g., `[f32; 3]`).                           | All components appear at expected sub‑offsets within the record.         | Nested composite types align correctly.                           |
 | `test_padding_absence`       | Verify that no padding bytes are inserted between fields (tight packing).         | Byte distance between consecutive fields equals size of preceding field. | Alignment constraints may still cause padding (if alignment > 1). |
 
-## 6. Concurrency (if atomic writes are required)
+## 6. Concurrency with ArcSwap
 
-| Test Name                                  | Description                                                                    | Verification                                                                         | Edge Cases                                               |
-| ------------------------------------------ | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ | -------------------------------------------------------- |
-| `test_atomic_write_visibility`             | Write a record while another thread reads the same record (without `ArcSwap`). | Reader sees either all old bytes or all new bytes, never a partially updated record. | Use `AtomicU64` or similar for multi‑byte atomic writes. |
-| `test_concurrent_writes_different_records` | Multiple threads write to distinct records simultaneously.                     | No data races; each record contains only the data written by its thread.             | Buffer is shared (`Arc<Vec<u8>>`).                       |
+| Test Name                              | Description                                                               | Verification                                                            | Edge Cases                                        |
+| -------------------------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------- |
+| `test_write_with_arcswap_buffer_swap`  | Write records while another thread atomically swaps buffer via ArcSwap.   | Writer operates on buffer copy; swap atomically updates readable state. | Lock-free reads maintained during writes.         |
+| `test_concurrent_writes_buffer_copies` | Multiple threads write to distinct records, each getting own buffer copy. | Each writer's changes isolated; final atomic swap commits one version.  | Copy-on-write strategy with ArcSwap atomic swaps. |
 
 ---
 

@@ -7,6 +7,14 @@
 - Field struct (task_ts_2) assumed to have at least `name: String` and `type_id`.
 - No storage or serialization required yet.
 
+## TRD Alignment Notes
+
+- **Rust Implementation**: TRD §2 mandates Rust for performance and safety
+- **Schema Definition**: Table struct is foundation for JSON schema persistence (§5)
+- **Field Definitions**: Must support TRD §3 type system (integers, floats, strings, booleans, blobs)
+- **Catalog Integration**: Tables stored in catalog for REST API endpoint `/tables` (§5)
+- **Validation**: Field name uniqueness aligns with relational model constraints (§3)
+
 ## Test Categories
 
 ### 1. Basic Construction & Getters

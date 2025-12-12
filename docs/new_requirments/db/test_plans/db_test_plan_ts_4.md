@@ -7,6 +7,15 @@
 - Field addition/removal must validate: no duplicate names, valid type.
 - This task focuses on schema validation, not data migration (adding/removing fields when table has records may be handled later).
 
+## TRD Alignment Notes
+
+- **Storage Model**: Uses `Vec<u8>` row‑oriented buffers with tight packing (§4)
+- **Type System**: Field types must align with TRD §3 (integers, floats, strings, booleans, blobs)
+- **Concurrency**: Schema modifications should use ArcSwap (§4) for lock‑free reads (edge case 8)
+- **Validation**: Field name uniqueness and type validity enforced per relational model (§3)
+- **REST API**: Schema modifications correspond to `PATCH /tables/{name}/schema` endpoint (§5)
+- **JSON Schema**: Field changes must be reflected in persisted JSON schema files (§5)
+
 ## Assumptions
 
 - Table struct has methods:

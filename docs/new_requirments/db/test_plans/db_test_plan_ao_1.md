@@ -2,7 +2,7 @@
 
 ## Overview
 
-Tests for ensuring each CRUD operation (create, read, update, delete) is atomic (all‑or‑nothing) in the relational in‑memory database.
+Tests for ensuring each CRUD operation (create, read, update, delete) is atomic (all‑or‑nothing) in the Rust relational in‑memory database. Implements TRD requirement: "Default atomic transactions; each CRUD operation atomic." Atomic operations are exposed via REST API endpoints for schema and data operations.
 
 ## 1. Atomic Create Tests
 

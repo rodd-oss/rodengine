@@ -8,6 +8,14 @@ Implement main database loop that runs at configurable tickrate (15–120 Hz).
 
 Part of relational in-memory database for online games, written in Rust. Loop executes handlers (API calls, custom procedures) each tick.
 
+## TRD Alignment Notes
+
+- **Tickrate**: TRD §4 specifies configurable 15–120 Hz event loop for real‑time game integration
+- **Concurrency**: Must use ArcSwap (§4) for lock‑free reads; test case 7 already covers this
+- **REST API**: Loop must integrate with REST endpoints (§5) for external commands
+- **Performance**: Loop timing affects overall database responsiveness (§4)
+- **Atomicity**: Handlers should respect transaction boundaries (§3) when modifying data
+
 ## Test Cases
 
 ### 1. **test_tickrate_configuration**

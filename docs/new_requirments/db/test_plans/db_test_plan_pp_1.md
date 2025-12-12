@@ -2,7 +2,7 @@
 
 ## Overview
 
-Tests for implementing parallel iteration over table records using Rayon, as part of the relational in-memory database for online games.
+Tests for implementing parallel iteration over table records using Rayon, as part of the Rust relational in-memory database for online games. Implements TRD's procedural parallelism requirement for maximizing cache hits across CPU cores.
 
 ## 1. Basic Parallel Iteration Tests
 
@@ -103,6 +103,13 @@ Tests for implementing parallel iteration over table records using Rayon, as par
 **Verifies**: Iteration doesn't violate referential integrity
 **Edge cases**: Records with foreign key references
 **Assertions**: Related records remain accessible
+
+## Integration with TRD Architecture
+
+- **REST API Procedures**: Parallel iteration will be available via custom transactional procedures executed through REST API endpoints
+- **Event Loop Integration**: Procedures using parallel iteration execute within the 15–120 Hz tickrate constraints
+- **JSON Schema**: Works with tables defined via JSON schema files, respecting field types and composite type definitions
+- **ArcSwap Concurrency**: Maintains lock-free reads during parallel iteration as required by TRD
 
 ## Key Assertions
 

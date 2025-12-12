@@ -2,9 +2,10 @@
 
 ## Context
 
-- In-memory relational database with `Vec<u8>` storage.
+- Rust implementation of in-memory relational database with `Vec<u8>` storage.
 - Records tightly packed; field access via offsets.
 - Need to validate record and field indices before unsafe pointer operations.
+- Bounds checking must work with ArcSwap lock-free concurrency model for atomic operations.
 
 ## Assumptions
 
@@ -110,7 +111,34 @@ If API uses signed integers (i32), negative indices should be caught.
 
 - Expect: Compile‑time error or runtime bounds check.
 
-### 5. Integration with Unsafe Operations
+### 5. Concurrency with ArcSwap
+
+**test_bounds_check_during_buffer_swap**  
+Verifies bounds checking works correctly during ArcSwap atomic buffer swaps, maintaining lock‑free reads.
+
+- Setup: Table with records, using ArcSwap for buffer management.
+- Action: One thread performs bounds checking using `ArcSwap::load()` to get consistent snapshot while another atomically swaps the buffer.
+- Expect: Bounds checking succeeds with consistent buffer snapshot; no data races or invalid pointer accesses.
+- Implementation: Bounds checking must call `ArcSwap::load()` first to obtain `Arc<Vec<u8>>` reference before validating indices.
+- Note: Ensures alignment with TRD's lock‑free concurrency model.
+
+**test_bounds_check_with_arcswap_load**  
+Verifies bounds checking always uses `ArcSwap::load()` for consistent buffer snapshots.
+
+- Setup: Table with ArcSwap buffer.
+- Action: Call bounds checking API and verify it internally uses `ArcSwap::load()`.
+- Assert: No direct buffer access without `ArcSwap::load()` snapshot.
+- Implementation: Can use mock or spy to verify `ArcSwap::load()` calls.
+
+**test_concurrent_bounds_checks_consistent**  
+Multiple threads performing bounds checks see consistent buffer state.
+
+- Setup: Table with records and ArcSwap buffer.
+- Action: Multiple threads simultaneously call bounds checking for same indices.
+- Expect: All threads see same buffer state (either all succeed or all fail based on consistent snapshot).
+- Implementation: Use barrier synchronization to ensure concurrent execution.
+
+### 6. Integration with Unsafe Operations
 
 **test_bounds_check_before_unsafe_access**  
 Ensure that bounds checking occurs before any unsafe pointer arithmetic.
@@ -118,7 +146,7 @@ Ensure that bounds checking occurs before any unsafe pointer arithmetic.
 - Can be verified via code review; but we can write a test that passes invalid indices and confirms no undefined behavior (e.g., using `catch_unwind` to see if panic occurs before unsafe block).
 - Use `#[should_panic]` or `Result` testing.
 
-### 6. Error Messages & Types
+### 7. Error Messages & Types
 
 **test_error_type_includes_context**  
 Out‑of‑bounds error should contain which index failed (record vs field) and the allowed range.
@@ -126,7 +154,7 @@ Out‑of‑bounds error should contain which index failed (record vs field) and 
 - Assert: Error variant `OutOfBounds::RecordIndex { index, max }` or `OutOfBounds::FieldIndex { index, max }`.
 - Useful for debugging.
 
-### 7. Performance Impact
+### 8. Performance Impact
 
 **test_bounds_check_not_skipped_in_release**  
 Ensure bounds checks are present in release builds (if safety is required).
@@ -140,6 +168,7 @@ Ensure bounds checks are present in release builds (if safety is required).
 - Use `#[should_panic]` if panic is expected.
 - If returning `Result`, use `assert!(matches!(result, Err(OutOfBounds::RecordIndex { .. })))`.
 - Mock storage buffer with dummy data to avoid actual allocations where possible.
+- **Critical**: Bounds checking must always use `ArcSwap::load()` to obtain consistent buffer snapshot before validation to prevent race conditions during buffer swaps.
 
 ## Test Coverage Goals
 

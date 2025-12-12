@@ -4,6 +4,14 @@
 
 Unit tests for the `Field` struct with `name`, `type identifier`, and `byte offset`. The struct is a simple data carrier; validation of values is deferred to later tasks.
 
+## TRD Alignment Notes
+
+- **Type System**: Field type identifiers must map to TRD §3 types (integers, floats, strings, booleans, blobs)
+- **Schema Persistence**: Field definitions are part of JSON schema files (§5) for table definitions
+- **Memory Layout**: Byte offset supports tight packing of rows in `Vec<u8>` buffers (§4)
+- **Validation**: Field name uniqueness and type validity enforced by catalog validation (§3)
+- **REST API**: Field metadata exposed via `/tables/{name}/schema` endpoint (§5)
+
 ## Test Cases
 
 ### 1. **test_field_creation**

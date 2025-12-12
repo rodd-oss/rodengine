@@ -61,7 +61,7 @@
 
 ### test_procedure_with_side_effects
 
-**Verifies**: External side effects (like file I/O) are not rolled back, only database changes  
+**Verifies**: External side effects (like file I/O) are not rolled back, only database changes (aligned with TRD's atomic transaction requirement for database operations)  
 **Assertions**:
 
 - File system changes persist despite rollback

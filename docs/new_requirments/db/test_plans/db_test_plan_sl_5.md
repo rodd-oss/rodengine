@@ -1,5 +1,9 @@
 # Test Plan for task_sl_5: Read records from buffer via unsafe pointer casting and validate data integrity
 
+## Context
+
+Rust implementation of in-memory relational database with `Vec<u8>` storage. Reads are lock‑free via ArcSwap atomic buffer swaps as required by TRD.
+
 ## 1. Basic Reading Tests
 
 - **`test_read_single_record_i32`** – Verifies that a single i32 field is correctly read from buffer at offset 0.
@@ -26,10 +30,11 @@
 - **`test_custom_type_validation`** – Custom type may have invariants (e.g., vector length positive); validation function checks them.
 - **`test_corrupted_buffer_detected`** – Fill buffer with random bytes; reading any record should either produce garbage (if no validation) or trigger validation failure.
 
-## 5. Concurrency & Atomicity (future‑proof)
+## 5. Concurrency & Atomicity (ArcSwap Lock‑Free Reads)
 
-- **`test_read_while_buffer_swapped`** – With ArcSwap buffer, reading from old buffer while a new buffer is swapped must still be safe (no data races).
+- **`test_read_while_buffer_swapped`** – With ArcSwap buffer, reading from old buffer while a new buffer is swapped must still be safe (no data races). Verifies lock‑free reads as per TRD.
 - **`test_concurrent_reads_no_tearing`** – Multiple threads reading same record concurrently must observe consistent values.
+- **`test_lock_free_reads_via_arcswap`** – Ensures readers are never blocked by writers, using ArcSwap atomic loads for lock‑free access.
 
 ## 6. Integration with Write (task_sl_4)
 
