@@ -360,6 +360,20 @@ impl TableBuffer {
             }
         }
 
+        // Check for overlapping fields
+        for (i, &(offset1, data1)) in fields.iter().enumerate() {
+            let end1 = offset1 + data1.len();
+
+            for &(offset2, data2) in fields.iter().skip(i + 1) {
+                let end2 = offset2 + data2.len();
+
+                // Check if ranges [offset1, end1) and [offset2, end2) overlap
+                if offset1 < end2 && offset2 < end1 {
+                    return Err("overlapping fields detected");
+                }
+            }
+        }
+
         // All checks passed, perform the write
         unsafe {
             self.write_record(record_index, record_size, fields);
