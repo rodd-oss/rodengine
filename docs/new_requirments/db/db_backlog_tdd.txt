@@ -5,7 +5,7 @@ feature_storage_layout_start
 [x]task_sl_2: Define field types (e.g., i32, f32, bool) and their byte sizes/alignments.
 [x]task_sl_3: Calculate record size based on defined fields (tight packing, no padding).
 [x]task_sl_4: Write records into buffer at correct offsets via unsafe pointer casting.
-[]task_sl_5: Read records from buffer via unsafe pointer casting and validate data integrity.
+[x]task_sl_5: Read records from buffer via unsafe pointer casting and validate data integrity.
 feature_storage_layout_end
 feature_zero_copy_start
 []task_zc_1: Ensure field accessors return references (&T) rather than copying values.
