@@ -107,6 +107,7 @@ impl FieldBuilder {
 pub struct FieldListBuilder {
     fields: Vec<Field>,
     current_offset: usize,
+    tight_packing: bool,
 }
 
 impl FieldListBuilder {
@@ -116,6 +117,24 @@ impl FieldListBuilder {
         Self {
             fields: Vec::new(),
             current_offset: 0,
+            tight_packing: false,
+        }
+    }
+
+    /// Creates a new empty FieldListBuilder with tight packing mode.
+    /// In tight packing mode, fields are placed consecutively without alignment gaps.
+    /// This violates normal alignment requirements but may be needed for certain use cases.
+    ///
+    /// # Warning
+    /// Fields created with tight packing will fail `validate_alignment()` checks
+    /// because their offsets are not aligned to their type's alignment requirements.
+    /// This is intentional - tight packing trades alignment for space efficiency.
+    #[must_use]
+    pub fn new_tight_packing() -> Self {
+        Self {
+            fields: Vec::new(),
+            current_offset: 0,
+            tight_packing: true,
         }
     }
 
@@ -131,7 +150,15 @@ impl FieldListBuilder {
     /// Consider validating field names here or in the FieldBuilder.
     #[must_use]
     pub fn add_field(mut self, name: String, ty: Type) -> Self {
-        let field = Field::builder(name, ty).build_with_offset(self.current_offset);
+        let offset = if self.tight_packing {
+            self.current_offset
+        } else {
+            crate::align_offset(self.current_offset, ty)
+                .expect("offset calculation would overflow usize")
+        };
+
+        let field = Field { name, ty, offset };
+
         self.current_offset = field.end_offset();
         self.fields.push(field);
         self
@@ -188,6 +215,12 @@ impl Field {
         Ok(())
     }
 
+    /// Returns `true` if this field's offset is properly aligned for its type.
+    /// Fields created with tight packing will return `false`.
+    pub fn is_aligned(&self) -> bool {
+        self.offset.is_multiple_of(self.ty.alignment())
+    }
+
     /// Returns the name of the field.
     pub fn name(&self) -> &str {
         &self.name
@@ -215,12 +248,87 @@ impl Field {
 
     /// Returns the end offset of this field (offset + size).
     ///
-    /// # TODO: Consider overflow protection
-    /// This could overflow if `offset + size()` exceeds `usize::MAX`.
-    /// Consider returning `Option<usize>` or using `checked_add` for safety.
+    /// # Panics
+    /// Panics if `offset + size()` would overflow `usize`.
+    /// For overflow-safe version, use `end_offset_checked()`.
     pub fn end_offset(&self) -> usize {
-        self.offset + self.size()
+        self.offset
+            .checked_add(self.size())
+            .expect("offset + size overflow")
     }
+
+    /// Returns the end offset of this field (offset + size) with overflow protection.
+    ///
+    /// Returns `Some(end_offset)` if the calculation succeeds, or `None` if it would overflow `usize`.
+    pub fn end_offset_checked(&self) -> Option<usize> {
+        self.offset.checked_add(self.size())
+    }
+}
+
+/// Calculates the total record size in bytes for a list of fields.
+///
+/// The record size is calculated as the maximum end offset among all fields.
+/// This accounts for field offsets, including any alignment gaps between fields.
+/// If there are no fields, the record size is 0.
+///
+/// # Note on Tight Packing
+/// For tight packing (no alignment gaps), use `FieldListBuilder::new_tight_packing()`
+/// to create fields. The calculated size will be the sum of field sizes without
+/// alignment gaps.
+///
+/// # Panics
+/// Panics if any field's `end_offset()` calculation would overflow `usize`.
+/// This should only happen with extremely large offsets that exceed addressable memory.
+///
+/// # Examples
+/// ```
+/// use db_types::{FieldListBuilder, calculate_record_size, Type};
+///
+/// let fields = FieldListBuilder::new()
+///     .add_field("id".to_string(), Type::I32)
+///     .add_field("score".to_string(), Type::F64)
+///     .add_field("active".to_string(), Type::Bool)
+///     .build();
+///
+/// let size = calculate_record_size(&fields);
+/// assert_eq!(size, 17); // Based on field offsets and sizes
+/// ```
+pub fn calculate_record_size(fields: &[Field]) -> usize {
+    fields
+        .iter()
+        .map(|field| field.end_offset())
+        .max()
+        .unwrap_or(0)
+}
+
+/// Calculates the total record size in bytes for a list of fields with overflow protection.
+///
+/// Returns `Some(size)` if the calculation succeeds, or `None` if any field's
+/// `end_offset()` calculation would overflow `usize`.
+///
+/// # Examples
+/// ```
+/// use db_types::{FieldListBuilder, calculate_record_size_checked, Type};
+///
+/// let fields = FieldListBuilder::new()
+///     .add_field("id".to_string(), Type::I32)
+///     .add_field("score".to_string(), Type::F64)
+///     .build();
+///
+/// let size = calculate_record_size_checked(&fields);
+/// assert_eq!(size, Some(16));
+/// ```
+pub fn calculate_record_size_checked(fields: &[Field]) -> Option<usize> {
+    let mut max_offset = 0;
+
+    for field in fields {
+        let end_offset = field.offset.checked_add(field.size())?;
+        if end_offset > max_offset {
+            max_offset = end_offset;
+        }
+    }
+
+    Some(max_offset)
 }
 
 #[cfg(test)]
@@ -443,5 +551,309 @@ mod tests {
         for field in &fields {
             assert!(field.validate_alignment().is_ok());
         }
+    }
+
+    #[test]
+    fn test_calculate_record_size_empty_fields() {
+        let fields: Vec<Field> = vec![];
+        assert_eq!(calculate_record_size(&fields), 0);
+        assert_eq!(calculate_record_size_checked(&fields), Some(0));
+    }
+
+    #[test]
+    fn test_calculate_record_size_single_primitive() {
+        let fields = FieldListBuilder::new()
+            .add_field("id".to_string(), Type::I32)
+            .build();
+
+        assert_eq!(calculate_record_size(&fields), 4);
+        assert_eq!(calculate_record_size_checked(&fields), Some(4));
+
+        // Test other primitive types
+        let fields = FieldListBuilder::new()
+            .add_field("value".to_string(), Type::F64)
+            .build();
+
+        assert_eq!(calculate_record_size(&fields), 8);
+        assert_eq!(calculate_record_size_checked(&fields), Some(8));
+
+        let fields = FieldListBuilder::new()
+            .add_field("flag".to_string(), Type::Bool)
+            .build();
+
+        assert_eq!(calculate_record_size(&fields), 1);
+        assert_eq!(calculate_record_size_checked(&fields), Some(1));
+    }
+
+    #[test]
+    fn test_calculate_record_size_multiple_same_type() {
+        let fields = FieldListBuilder::new_tight_packing()
+            .add_field("a".to_string(), Type::I32)
+            .add_field("b".to_string(), Type::I32)
+            .add_field("c".to_string(), Type::I32)
+            .build();
+
+        // Each i32 is 4 bytes
+        // With tight packing: 4 + 4 + 4 = 12 bytes
+        assert_eq!(calculate_record_size(&fields), 12);
+        assert_eq!(calculate_record_size_checked(&fields), Some(12));
+    }
+
+    #[test]
+    fn test_calculate_record_size_mixed_primitives() {
+        let fields = FieldListBuilder::new_tight_packing()
+            .add_field("a".to_string(), Type::I8) // offset 0, size 1, end 1
+            .add_field("b".to_string(), Type::I32) // offset 1, size 4, end 5 (tight packing!)
+            .add_field("c".to_string(), Type::F64) // offset 5, size 8, end 13 (tight packing!)
+            .build();
+
+        // With tight packing: 1 + 4 + 8 = 13 bytes
+        assert_eq!(calculate_record_size(&fields), 13);
+        assert_eq!(calculate_record_size_checked(&fields), Some(13));
+    }
+
+    #[test]
+    fn test_calculate_record_size_field_order_independent() {
+        // Test that field order doesn't affect size calculation with tight packing
+        // Both [i32, f64] and [f64, i32] should be 12 bytes (4 + 8)
+        let fields1 = FieldListBuilder::new_tight_packing()
+            .add_field("a".to_string(), Type::I32)
+            .add_field("b".to_string(), Type::F64)
+            .build();
+
+        let fields2 = FieldListBuilder::new_tight_packing()
+            .add_field("b".to_string(), Type::F64)
+            .add_field("a".to_string(), Type::I32)
+            .build();
+
+        // With tight packing, both should be 12 bytes
+        assert_eq!(calculate_record_size(&fields1), 12);
+        assert_eq!(calculate_record_size(&fields2), 12);
+        assert_eq!(
+            calculate_record_size(&fields1),
+            calculate_record_size(&fields2)
+        );
+    }
+
+    #[test]
+    fn test_calculate_record_size_large_record() {
+        // Create many fields to test no overflow in calculation
+        let mut builder = FieldListBuilder::new();
+        for i in 0..100 {
+            builder = builder.add_field(format!("field_{}", i), Type::I32);
+        }
+        let fields = builder.build();
+
+        // 100 i32 fields, each 4 bytes, aligned to 4-byte boundaries
+        // Total size should be 100 * 4 = 400 bytes
+        assert_eq!(calculate_record_size(&fields), 400);
+        assert_eq!(calculate_record_size_checked(&fields), Some(400));
+    }
+
+    #[test]
+    fn test_calculate_record_size_zero_sized_types() {
+        // Note: We don't have zero-sized types in our Type enum yet
+        // This test would need to be updated if we add them
+        // For now, test with smallest types (1 byte)
+        let fields = FieldListBuilder::new()
+            .add_field("a".to_string(), Type::Bool) // size 1
+            .add_field("b".to_string(), Type::I32) // size 4, aligned to 4 from offset 1
+            .add_field("c".to_string(), Type::Bool) // size 1
+            .build();
+
+        // Offsets: bool at 0, i32 at 4 (aligned from 1), bool at 8
+        // End offsets: 1, 8, 9
+        // Max end offset: 9
+        assert_eq!(calculate_record_size(&fields), 9);
+        assert_eq!(calculate_record_size_checked(&fields), Some(9));
+    }
+
+    #[test]
+    fn test_calculate_record_size_alignment_no_padding() {
+        // Test that we don't insert padding between fields with tight packing
+        // [u8, u64] should be 1 + 8 = 9 bytes, not 16
+        let fields = FieldListBuilder::new_tight_packing()
+            .add_field("a".to_string(), Type::U8) // offset 0, size 1
+            .add_field("b".to_string(), Type::U64) // offset 1 (tight packing!), size 8
+            .build();
+
+        // With tight packing: 1 + 8 = 9 bytes
+        assert_eq!(calculate_record_size(&fields), 9);
+        assert_eq!(calculate_record_size_checked(&fields), Some(9));
+    }
+
+    #[test]
+    fn test_calculate_record_size_overflow_panic() {
+        // Test that calculate_record_size panics on overflow
+        // Create a field with offset near usize::MAX
+        let field = Field {
+            name: "test".to_string(),
+            ty: Type::I32,
+            offset: usize::MAX - 3, // This will overflow when adding size 4
+        };
+
+        // The panic version should panic
+        let result = std::panic::catch_unwind(|| {
+            calculate_record_size(&[field.clone()]);
+        });
+        assert!(result.is_err());
+
+        // The checked version should return None
+        assert_eq!(calculate_record_size_checked(&[field]), None);
+    }
+
+    #[test]
+    fn test_calculate_record_size_memory_layout_match() {
+        // Test that calculated size matches what we'd allocate
+        let fields = FieldListBuilder::new()
+            .add_field("id".to_string(), Type::I32)
+            .add_field("score".to_string(), Type::F64)
+            .add_field("active".to_string(), Type::Bool)
+            .build();
+
+        let calculated_size = calculate_record_size(&fields);
+
+        // Create a buffer with the calculated size
+        let buffer = vec![0u8; calculated_size];
+        assert_eq!(buffer.len(), calculated_size);
+
+        // Verify we can access all field positions
+        for field in &fields {
+            assert!(
+                field.offset() + field.size() <= calculated_size,
+                "Field {} at offset {} with size {} exceeds buffer size {}",
+                field.name(),
+                field.offset(),
+                field.size(),
+                calculated_size
+            );
+        }
+    }
+
+    #[test]
+    fn test_calculate_record_size_with_custom_field_offsets() {
+        // Test with manually created fields (not using FieldListBuilder)
+        let fields = vec![
+            Field::builder("a".to_string(), Type::I32).build_with_offset(0),
+            Field::builder("b".to_string(), Type::F64).build_with_offset(100), // Large gap
+            Field::builder("c".to_string(), Type::Bool).build_with_offset(200),
+        ];
+
+        // Size should be based on furthest field end offset
+        // Field c at offset 200 + size 1 = 201
+        assert_eq!(calculate_record_size(&fields), 201);
+        assert_eq!(calculate_record_size_checked(&fields), Some(201));
+    }
+
+    #[test]
+    fn test_calculate_record_size_negative_offset_overflow() {
+        // Test with fields that have very large offsets
+        let field1 = Field {
+            name: "field1".to_string(),
+            ty: Type::U8,
+            offset: usize::MAX / 2,
+        };
+
+        let field2 = Field {
+            name: "field2".to_string(),
+            ty: Type::U8,
+            offset: usize::MAX / 2 + 1,
+        };
+
+        // This should not overflow in checked version
+        let fields = vec![field1, field2];
+        let result = calculate_record_size_checked(&fields);
+        assert!(result.is_some());
+
+        // Size should be (usize::MAX / 2 + 1) + 1
+        let expected = (usize::MAX / 2 + 1) + 1;
+        assert_eq!(result, Some(expected));
+    }
+
+    #[test]
+    fn test_field_end_offset_checked() {
+        let field = Field::builder("test".to_string(), Type::I32).build_with_offset(100);
+
+        // Normal case
+        assert_eq!(field.end_offset_checked(), Some(104));
+        assert_eq!(field.end_offset(), 104);
+
+        // Test with field that would overflow
+        let overflow_field = Field {
+            name: "overflow".to_string(),
+            ty: Type::I32,
+            offset: usize::MAX - 3,
+        };
+
+        assert_eq!(overflow_field.end_offset_checked(), None);
+    }
+
+    #[test]
+    #[should_panic(expected = "offset + size overflow")]
+    fn test_field_end_offset_panic() {
+        let field = Field {
+            name: "overflow".to_string(),
+            ty: Type::I32,
+            offset: usize::MAX - 3,
+        };
+
+        // This should panic
+        field.end_offset();
+    }
+
+    #[test]
+    fn test_field_is_aligned() {
+        // Aligned field
+        let aligned = Field::builder("aligned".to_string(), Type::I32).build_with_offset(0);
+        assert!(aligned.is_aligned());
+        assert!(aligned.validate_alignment().is_ok());
+
+        // Misaligned field (tight packing scenario)
+        let misaligned = Field {
+            name: "misaligned".to_string(),
+            ty: Type::I32,
+            offset: 1, // i32 requires 4-byte alignment
+        };
+
+        assert!(!misaligned.is_aligned());
+        assert!(misaligned.validate_alignment().is_err());
+    }
+
+    #[test]
+    fn test_calculate_record_size_with_normal_packing() {
+        // Test with normal (aligned) packing
+        let fields = FieldListBuilder::new()
+            .add_field("a".to_string(), Type::U8) // offset 0, size 1
+            .add_field("b".to_string(), Type::U64) // offset 8 (aligned from 1), size 8
+            .build();
+
+        // With normal packing: u8 at 0, u64 at 8 (aligned) = 16 bytes
+        assert_eq!(calculate_record_size(&fields), 16);
+        assert_eq!(calculate_record_size_checked(&fields), Some(16));
+
+        // Verify fields are aligned
+        for field in &fields {
+            assert!(field.is_aligned());
+            assert!(field.validate_alignment().is_ok());
+        }
+    }
+
+    #[test]
+    fn test_tight_packing_creates_misaligned_fields() {
+        // Create fields with tight packing
+        let fields = FieldListBuilder::new_tight_packing()
+            .add_field("a".to_string(), Type::U8) // offset 0, size 1
+            .add_field("b".to_string(), Type::U64) // offset 1 (tight packing!), size 8
+            .build();
+
+        // First field should be aligned (offset 0)
+        assert!(fields[0].is_aligned());
+
+        // Second field should NOT be aligned (offset 1 for u64)
+        assert!(!fields[1].is_aligned());
+        assert!(fields[1].validate_alignment().is_err());
+
+        // Size should be 9 bytes with tight packing
+        assert_eq!(calculate_record_size(&fields), 9);
     }
 }

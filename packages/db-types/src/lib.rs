@@ -9,6 +9,8 @@
 //! - [`FieldBuilder`]: Builder for creating individual [`Field`] instances
 //! - [`FieldListBuilder`]: Builder for creating multiple fields with automatic offset calculation
 //! - [`FieldError`]: Error type for field creation and validation
+//! - [`calculate_record_size`]: Function to calculate total record size from field list
+//! - [`calculate_record_size_checked`]: Overflow-safe version of record size calculation
 //!
 //! # TODO: Document safety considerations
 //! Add documentation about overflow protection, alignment requirements, and
@@ -17,7 +19,7 @@
 //! # Examples
 //!
 //! ```
-//! use db_types::{Type, Field, FieldListBuilder, align_offset};
+//! use db_types::{Type, Field, FieldListBuilder, align_offset, calculate_record_size};
 //!
 //! // Create a single field with proper offset calculation
 //! let field = Field::builder("age".to_string(), Type::I32)
@@ -40,6 +42,10 @@
 //! assert_eq!(fields[1].offset(), 8);    // score at offset 8 (aligned from 4)
 //! assert_eq!(fields[2].offset(), 16);   // active at offset 16
 //!
+//! // Calculate record size
+//! let size = calculate_record_size(&fields);
+//! assert_eq!(size, 17);
+//!
 //! // Calculate aligned offset
 //! let offset = align_offset(1, Type::I64);
 //! assert_eq!(offset, Some(8)); // Aligned from 1 to 8
@@ -53,7 +59,10 @@ pub mod table;
 pub mod types;
 
 // Re-export commonly used types
-pub use field::{Field, FieldBuilder, FieldError, FieldListBuilder};
+pub use field::{
+    calculate_record_size, calculate_record_size_checked, Field, FieldBuilder, FieldError,
+    FieldListBuilder,
+};
 pub use types::align_offset;
 pub use types::Type;
 
