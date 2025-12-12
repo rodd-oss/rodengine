@@ -30,7 +30,7 @@ Verifies that a simple composite (e.g., `Vec3 = [f32; 3]`) can be registered and
 
 - Setup: Empty registry.
 - Action: Register `Vec3` with three `f32` components.
-- Assert: Retrieval returns correct `CompositeDef`; size = 12 bytes, alignment = 4, offsets = [0,4,8].
+- Assert: Retrieval returns correct `CompositeDef`; size = 12 bytes, alignment = 4, offsets = `0, 4, 8`.
 
 **test_register_composite_with_mixed_scalars**  
 Composite with different scalar types (e.g., `Player { id: u64, health: f32, alive: bool }`).

@@ -9,7 +9,7 @@ Part of relational in-memory database for online games (Rust). Storage uses `Vec
 ### 1. test_record_packing_basic_types
 
 **Verifies**: Basic scalar types pack without padding when placed consecutively.
-**Fields**: Sequence of [u8, i16, i32, f64, bool]
+**Fields**: Sequence of `[u8, i16, i32, f64, bool]`
 **Expected offsets**: 0, 1, 3, 7, 15 (not 0, 2, 4, 8, 16 with natural alignment)
 **Assertions**:
 
@@ -19,7 +19,7 @@ Part of relational in-memory database for online games (Rust). Storage uses `Vec
 ### 2. test_record_packing_mixed_alignment
 
 **Verifies**: Fields with different natural alignments pack with alignment=1.
-**Fields**: [u8, u32, u8, u64] (u32 normally 4-byte aligned, u64 8-byte aligned)
+**Fields**: `[u8, u32, u8, u64]` (u32 normally 4-byte aligned, u64 8-byte aligned)
 **Expected offsets**: 0, 1, 5, 6
 **Assertions**:
 
@@ -41,7 +41,7 @@ Part of relational in-memory database for online games (Rust). Storage uses `Vec
 ### 4. test_record_packing_zero_sized_fields
 
 **Verifies**: Zero-sized types don't affect packing or offsets.
-**Fields**: [u8, PhantomData<()>, i32, ()]
+**Fields**: `[u8, PhantomData<()>, i32, ()]`
 **Expected offsets**: 0, 1, 1, 5
 **Assertions**:
 
@@ -54,9 +54,9 @@ Part of relational in-memory database for online games (Rust). Storage uses `Vec
 **Verifies**: Extreme packing scenarios work correctly.
 **Test cases**:
 
-1. Single field record: [u64] → size=8, offset=0
-2. Many small fields: 100×[u8] → size=100, each offset increments by 1
-3. Alternating sizes: [u8, u64, u8, u64] → offsets 0,1,9,10
+1. Single field record: `[u64]` → size=8, offset=0
+2. Many small fields: 100×`[u8]` → size=100, each offset increments by 1
+3. Alternating sizes: `[u8, u64, u8, u64]` → offsets 0,1,9,10
 4. Maximum practical field count (stress test)
    **Assertions**:
 
@@ -84,8 +84,8 @@ Part of relational in-memory database for online games (Rust). Storage uses `Vec
 
 ### Type System Edge Cases
 
-- **#[repr(align)] types**: User types with explicit alignment requirements
-- **#[repr(C)] types**: C-compatible types with different packing rules
+- **`#[repr(align)]` types**: User types with explicit alignment requirements
+- **`#[repr(C)]` types**: C-compatible types with different packing rules
 - **Enums**: Size depends on discriminant + largest variant
 - **Arrays**: `[T; N]` should pack as N×size_of::<T>() without padding
 
@@ -106,7 +106,7 @@ Part of relational in-memory database for online games (Rust). Storage uses `Vec
 ### Rust-Specific Concerns
 
 1. **Unaligned access**: May require `ptr::read_unaligned`/`ptr::write_unaligned`
-2. **#[repr(packed)]**: Can cause performance penalties or undefined behavior
+2. **`#[repr(packed)]`**: Can cause performance penalties or undefined behavior
 3. **Safe abstractions**: Need to ensure memory safety despite unaligned access
 4. **Zero-copy**: References to packed fields must respect Rust's aliasing rules
 

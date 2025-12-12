@@ -97,9 +97,9 @@ Adding a field whose name already exists should fail.
 **test_remove_field_by_name**  
 If removal is in scope, test that field is removed and vector updated.
 
-- Setup: Table with fields ["id", "score"].
+- Setup: Table with fields "id", "score".
 - Action: Remove "id".
-- Assert: Remaining field list == ["score"].
+- Assert: Remaining field list == "score".
 
 ### 5. Edge Cases & Stress
 
