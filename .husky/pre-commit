@@ -1,1 +1,4 @@
 bunx lint-staged
+cargo check --all-targets
+cargo clippy --all-targets -- -D warnings
+cargo fmt --all -- --check
