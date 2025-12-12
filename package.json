@@ -1,0 +1,25 @@
+{
+  "name": "rodengine",
+  "version": "1.0.0",
+  "workspaces": [
+    "apps/**",
+    "packages/**",
+    "!packages/**/test/**",
+    "!packages/**/template/**"
+  ],
+  "devDependencies": {
+    "@eslint/css": "^0.14.1",
+    "@eslint/js": "^9.39.1",
+    "@eslint/json": "^0.14.0",
+    "@eslint/markdown": "^7.5.1",
+    "@types/bun": "latest",
+    "eslint": "^9.39.1",
+    "eslint-plugin-vue": "^10.6.2",
+    "globals": "^16.5.0",
+    "jiti": "^2.6.1",
+    "typescript-eslint": "^8.49.0"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}
