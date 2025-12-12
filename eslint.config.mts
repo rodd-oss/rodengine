@@ -7,6 +7,11 @@ import markdown from "@eslint/markdown";
 import css from "@eslint/css";
 import { defineConfig } from "eslint/config";
 
+// Note the `/flat` suffix here, the difference from default entry is that
+// `/flat` added `name` property to the exported object to improve
+// [config-inspector](https://eslint.org/blog/2024/04/eslint-config-inspector/) experience.
+import eslintConfigPrettier from "eslint-config-prettier/flat";
+
 export default defineConfig([
   {
     files: ["**/*.{js,mjs,cjs,ts,mts,cts,vue}"],
@@ -53,4 +58,5 @@ export default defineConfig([
     language: "css/css",
     extends: ["css/recommended"],
   },
+  eslintConfigPrettier,
 ]);
