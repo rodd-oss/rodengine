@@ -1,0 +1,114 @@
+backlog_start
+phase_foundation_start
+feature_storage_layout_start
+task_sl_1: Implement Vec<u8> storage buffer for a table that can be initialized with capacity.
+task_sl_2: Define field types (e.g., i32, f32, bool) and their byte sizes/alignments.
+task_sl_3: Calculate record size based on defined fields (tight packing, no padding).
+task_sl_4: Write records into buffer at correct offsets via unsafe pointer casting.
+task_sl_5: Read records from buffer via unsafe pointer casting and validate data integrity.
+feature_storage_layout_end
+feature_zero_copy_start
+task_zc_1: Ensure field accessors return references (&T) rather than copying values.
+task_zc_2: Implement iterator over table records that yields references to each record.
+feature_zero_copy_end
+feature_memory_safety_start
+task_ms_1: Validate field offsets and sizes to prevent out‑of‑bounds access.
+task_ms_2: Add bounds checking for record indices and field indices.
+feature_memory_safety_end
+phase_foundation_end
+
+phase_data_model_start
+feature_table_schema_start
+task_ts_1: Define Table struct with name and vector of Field definitions.
+task_ts_2: Define Field struct with name, type identifier, and byte offset.
+task_ts_3: Implement table creation/destruction (add/remove from database catalog).
+task_ts_4: Implement field addition/removal with schema validation (no duplicate names, valid type).
+feature_table_schema_end
+feature_custom_types_start
+task_ct_1: Support built‑in scalar types (i32, u64, f32, bool, etc.).
+task_ct_2: Allow user‑defined composite types (e.g., Vec3 as 3×f32) via type registry.
+feature_custom_types_end
+feature_relations_start
+task_rl_1: Define Relation struct referencing source/destination tables and field mapping.
+task_rl_2: Store relations in schema and enforce referential integrity on record delete.
+feature_relations_end
+feature_schema_json_start
+task_sj_1: Serialize entire schema (tables, fields, relations) to JSON file.
+task_sj_2: Deserialize schema from JSON file and re‑create in‑memory structures.
+feature_schema_json_end
+phase_data_model_end
+
+phase_concurrency_start
+feature_atomic_operations_start
+task_ao_1: Ensure each CRUD operation (create, read, update, delete) is atomic (all‑or‑nothing).
+task_ao_2: Implement transaction log to rollback partial failures.
+feature_atomic_operations_end
+feature_arcswap_buffer_start
+task_ab_1: Wrap table storage buffer in Arc<Vec<u8>>.
+task_ab_2: Use ArcSwap to atomically swap buffers for writes while reads continue on old buffer.
+task_ab_3: Implement copy‑on‑write strategy for modifications.
+feature_arcswap_buffer_end
+feature_lock_free_reads_start
+task_lf_1: Provide read API that obtains a reference to current buffer via ArcSwap::load.
+task_lf_2: Ensure readers are not blocked by concurrent writers.
+feature_lock_free_reads_end
+phase_concurrency_end
+
+phase_api_start
+feature_rest_schema_start
+task_rs_1: Expose HTTP endpoint POST /table to create table (name, fields).
+task_rs_2: Expose DELETE /table/{name} to delete table.
+task_rs_3: Expose POST /table/{name}/field to add field (name, type).
+task_rs_4: Expose DELETE /table/{name}/field/{fieldName} to remove field.
+task_rs_5: Expose POST /relation to create relation between tables.
+task_rs_6: Expose DELETE /relation/{id} to delete relation.
+feature_rest_schema_end
+feature_rest_crud_start
+task_rc_1: Expose POST /table/{name}/record to insert record (JSON body).
+task_rc_2: Expose GET /table/{name}/record/{id} to retrieve record.
+task_rc_3: Expose PUT /table/{name}/record/{id} to update record.
+task_rc_4: Expose DELETE /table/{name}/record/{id} to delete record.
+task_rc_5: Expose GET /table/{name}/records to list all records (pagination).
+feature_rest_crud_end
+feature_rpc_start
+task_rp_1: Define RPC protocol (JSON‑RPC or custom) over HTTP.
+task_rp_2: Expose POST /rpc endpoint that dispatches to registered handlers.
+feature_rpc_end
+feature_procedures_start
+task_pr_1: Allow registration of custom procedures (function pointers/closures).
+task_pr_2: Execute procedure within transaction; auto‑commit on success, rollback on panic.
+feature_procedures_end
+phase_api_end
+
+phase_runtime_start
+feature_event_loop_start
+task_el_1: Implement main database loop that runs at configurable tickrate (15–120 Hz).
+task_el_2: Register handlers (API request processors, custom procedures) to be invoked each tick.
+feature_event_loop_end
+feature_parallel_procedures_start
+task_pp_1: Provide API to iterate over all records of a table in parallel (rayon).
+task_pp_2: Ensure parallel iteration respects cache locality (chunk size aligned to cache line).
+feature_parallel_procedures_end
+feature_cache_efficiency_start
+task_ce_1: Verify record packing eliminates padding (field alignment = 1).
+task_ce_2: Ensure table storage buffer is allocated as single contiguous Vec<u8>.
+feature_cache_efficiency_end
+phase_runtime_end
+
+phase_persistence_start
+feature_disk_save_start
+task_ds_1: Periodically snapshot entire database (buffers + schema) to binary file.
+task_ds_2: Perform snapshot in background thread without blocking main loop.
+feature_disk_save_end
+feature_recovery_start
+task_re_1: Load database from binary snapshot on startup.
+task_re_2: Validate snapshot integrity (checksum, version).
+feature_recovery_end
+feature_monorepo_integration_start
+task_mi_1: Create Rust crate under packages/db with proper Cargo.toml.
+task_mi_2: Add crate to workspace root Cargo.toml.
+task_mi_3: Write unit tests (cargo test) for all modules.
+feature_monorepo_integration_end
+phase_persistence_end
+
+backlog_end

@@ -1,0 +1,26 @@
+We want to build relational in memory database. It would be used for online games.
+
+Without any SQL support, but with rest API for
+- creating / deleting tables by name
+- creating / deleting table fields by name and type from predefined type list
+- creating / deleting relations
+- crud operations for records
+- RPC call
+
+Requirements_start
+- it should support relations for all tables
+- table storage should be a vec<u8> and perform unsafe casting user of defined fields to its storage
+- zero copy and minimum allocations
+- fields in one record should be tightly packed together for CPU cache friendliness
+- records in a table should be tightly packed to each other for CPU cache friendliness
+- each crud operation should be atomic and without mutex locks
+- it should use atomic transactions by default
+- it should be able to perform all operations in memory, and save changes on disk in parallel
+- it should be able to save its scheme in a json file
+- it should be able to support default DB data types and additional types such as 3xf32 for vector representation etc
+- db should support parallel read and write operations by using arc swap on the buffers
+- DB runtime should have its own loop with a specified tickrate. in that loop database runs its handlers such as API calls, custom procedures etc
+- tickrate from 15 hz to 120hz.
+- procedure should be able to itter parallel on all available CPU cores on the data in one table to maximize cache hit
+- each procedure should run transactionaly and commit at the end
+Requirements_end
