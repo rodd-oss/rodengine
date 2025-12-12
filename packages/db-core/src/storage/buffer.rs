@@ -1269,7 +1269,7 @@ mod tests {
 
         // Test data
         let id = 42u32;
-        let score = 3.14159f64;
+        let score = std::f64::consts::PI;
         let active = true;
         let name = b"test";
 
@@ -1478,7 +1478,7 @@ mod tests {
 
             // If we try to interpret as bool, Rust will treat any non-zero as true
             // This is why we need validation functions
-            assert!(!(false_val != 0));
+            assert!(false_val == 0);
             assert!(true_val != 0);
             assert!(invalid_val != 0); // Invalid value treated as true
         }
