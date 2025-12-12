@@ -8,7 +8,7 @@ feature_storage_layout_start
 [x]task_sl_5: Read records from buffer via unsafe pointer casting and validate data integrity.
 feature_storage_layout_end
 feature_zero_copy_start
-[]task_zc_1: Ensure field accessors return references (&T) rather than copying values.
+[x]task_zc_1: Ensure field accessors return references (&T) rather than copying values.
 []task_zc_2: Implement iterator over table records that yields references to each record.
 feature_zero_copy_end
 feature_memory_safety_start

@@ -859,3 +859,296 @@ fn test_write_record_checked_field_overlap() {
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("overlapping"));
 }
+
+// Tests for task_zc_1: Field accessors returning references (&T) rather than copying values
+
+#[test]
+fn test_field_reference_scalar_types() {
+    use db_core::storage::TableBuffer;
+
+    let mut buffer = TableBuffer::new_zeroed(128);
+    let record_size = 32;
+
+    // Write test data
+    let id_data = 42u32.to_ne_bytes();
+    let score_data = 3.5f32.to_ne_bytes();
+    let active_data = [1u8]; // true as u8
+    let count_data = 100u64.to_ne_bytes();
+
+    let fields = vec![
+        (0, id_data.as_slice()),
+        (4, score_data.as_slice()),
+        (8, active_data.as_slice()),
+        (16, count_data.as_slice()), // u64 needs 8-byte alignment
+    ];
+
+    unsafe {
+        buffer.write_record(0, record_size, &fields);
+    }
+
+    // Test getting references to scalar types
+    unsafe {
+        // Get references instead of copying values
+        let id_ref = buffer.field_ref::<u32>(0).unwrap();
+        let score_ref = buffer.field_ref::<f32>(4).unwrap();
+        let active_ref = buffer.field_ref::<bool>(8).unwrap();
+        let count_ref = buffer.field_ref::<u64>(16).unwrap();
+
+        // Verify values match
+        assert_eq!(*id_ref, 42);
+        assert!((*score_ref - 3.5).abs() < 0.0001);
+        assert!(*active_ref);
+        assert_eq!(*count_ref, 100);
+
+        // Verify these are references (not copies) by checking pointer equality
+        let buffer_ptr = buffer.as_ptr();
+        assert_eq!(id_ref as *const u32 as *const u8, buffer_ptr.add(0));
+        assert_eq!(score_ref as *const f32 as *const u8, buffer_ptr.add(4));
+        assert_eq!(active_ref as *const bool as *const u8, buffer_ptr.add(8));
+        assert_eq!(count_ref as *const u64 as *const u8, buffer_ptr.add(16));
+    }
+}
+
+#[test]
+fn test_field_mut_reference() {
+    use db_core::storage::TableBuffer;
+
+    let mut buffer = TableBuffer::new_zeroed(64);
+    let record_size = 16;
+
+    // Write initial data
+    let initial_data = 42u32.to_ne_bytes();
+    let fields = vec![(0, initial_data.as_slice())];
+
+    unsafe {
+        buffer.write_record(0, record_size, &fields);
+    }
+
+    // Get mutable reference and modify value
+    unsafe {
+        let value_ref = buffer.field_mut_ref::<u32>(0).unwrap();
+        assert_eq!(*value_ref, 42);
+
+        // Modify through mutable reference
+        *value_ref = 100;
+
+        // Verify modification
+        assert_eq!(*value_ref, 100);
+
+        // Read back using immutable reference
+        let read_ref = buffer.field_ref::<u32>(0).unwrap();
+        assert_eq!(*read_ref, 100);
+    }
+}
+
+#[test]
+fn test_field_reference_alignment() {
+    use db_core::storage::TableBuffer;
+    use std::mem::align_of;
+
+    let mut buffer = TableBuffer::new_zeroed(128);
+
+    // Write u64 at offset 0 (should be 8-byte aligned)
+    // Use write_at to write at specific offset
+    unsafe {
+        buffer.write_at::<u64>(0, 0x0123456789ABCDEF);
+    }
+
+    // Get reference and check alignment
+    unsafe {
+        let ref_u64 = buffer.field_ref::<u64>(0).unwrap();
+        let ptr = ref_u64 as *const u64;
+        assert_eq!(ptr as usize % align_of::<u64>(), 0);
+        assert_eq!(*ref_u64, 0x0123456789ABCDEF);
+    }
+
+    // Write f32 at offset 4 (should be 4-byte aligned)
+    unsafe {
+        buffer.write_at::<f32>(4, std::f32::consts::PI);
+    }
+
+    unsafe {
+        let ref_f32 = buffer.field_ref::<f32>(4).unwrap();
+        let ptr = ref_f32 as *const f32;
+        assert_eq!(ptr as usize % align_of::<f32>(), 0);
+        assert!((*ref_f32 - std::f32::consts::PI).abs() < 0.0001);
+    }
+}
+
+#[test]
+fn test_field_reference_out_of_bounds() {
+    use db_core::storage::TableBuffer;
+
+    let buffer = TableBuffer::new_zeroed(64);
+
+    // Try to get reference beyond buffer bounds
+    unsafe {
+        // Offset 60 for u32 would read bytes 60-63 (within bounds)
+        let result = buffer.field_ref::<u32>(60);
+        assert!(result.is_some());
+
+        // Offset 61 for u32 would read bytes 61-64 (64 is out of bounds for 64-byte buffer)
+        let result = buffer.field_ref::<u32>(61);
+        assert!(result.is_none());
+
+        // Offset 0 for u64 would read bytes 0-7 (within bounds)
+        let result = buffer.field_ref::<u64>(0);
+        assert!(result.is_some());
+
+        // Offset 57 for u64 would read bytes 57-64 (64 is out of bounds)
+        let result = buffer.field_ref::<u64>(57);
+        assert!(result.is_none());
+    }
+}
+
+#[test]
+fn test_field_reference_custom_composite_type() {
+    use db_core::storage::TableBuffer;
+
+    let mut buffer = TableBuffer::new_zeroed(128);
+
+    // Simulate Vec3 type (3xf32)
+    unsafe {
+        buffer.write_at::<f32>(0, 1.0f32);
+        buffer.write_at::<f32>(4, 2.0f32);
+        buffer.write_at::<f32>(8, 3.0f32);
+    }
+
+    // Get references to individual f32 components
+    unsafe {
+        let x_ref = buffer.field_ref::<f32>(0).unwrap();
+        let y_ref = buffer.field_ref::<f32>(4).unwrap();
+        let z_ref = buffer.field_ref::<f32>(8).unwrap();
+
+        assert!((*x_ref - 1.0).abs() < 0.0001);
+        assert!((*y_ref - 2.0).abs() < 0.0001);
+        assert!((*z_ref - 3.0).abs() < 0.0001);
+
+        // Also test getting reference to the whole [f32; 3] array
+        // Note: This requires the array to be stored contiguously
+        // We can't directly get &[f32; 3] because it's not stored as a single value
+        // But we can verify the individual components are contiguous
+        let buffer_ptr = buffer.as_ptr();
+        assert_eq!(x_ref as *const f32 as *const u8, buffer_ptr.add(0));
+        assert_eq!(y_ref as *const f32 as *const u8, buffer_ptr.add(4));
+        assert_eq!(z_ref as *const f32 as *const u8, buffer_ptr.add(8));
+    }
+}
+
+#[test]
+fn test_multiple_references_same_buffer() {
+    use db_core::storage::TableBuffer;
+
+    let mut buffer = TableBuffer::new_zeroed(128);
+    let record_size = 32;
+
+    // Write two records
+    for i in 0..2 {
+        let id_data = (100 + i as u32).to_ne_bytes();
+        let value_data = (i as f64 * 10.0).to_ne_bytes();
+
+        let fields = vec![(0, id_data.as_slice()), (8, value_data.as_slice())];
+
+        unsafe {
+            buffer.write_record(i, record_size, &fields);
+        }
+    }
+
+    // Get references to fields in different records
+    unsafe {
+        let id_ref0 = buffer.field_ref::<u32>(0).unwrap(); // Record 0, offset 0
+        let value_ref0 = buffer.field_ref::<f64>(8).unwrap(); // Record 0, offset 8
+
+        let id_ref1 = buffer.field_ref::<u32>(32).unwrap(); // Record 1, offset 32 (record_size * 1 + 0)
+        let value_ref1 = buffer.field_ref::<f64>(40).unwrap(); // Record 1, offset 40 (record_size * 1 + 8)
+
+        // Verify values
+        assert_eq!(*id_ref0, 100);
+        assert!((*value_ref0 - 0.0).abs() < 0.0001);
+
+        assert_eq!(*id_ref1, 101);
+        assert!((*value_ref1 - 10.0).abs() < 0.0001);
+
+        // Verify pointers are different
+        assert!(!std::ptr::eq(id_ref0, id_ref1));
+        assert!(!std::ptr::eq(value_ref0, value_ref1));
+
+        // Verify pointer offsets match record structure
+        let buffer_ptr = buffer.as_ptr();
+        assert_eq!(id_ref0 as *const u32 as *const u8, buffer_ptr.add(0));
+        assert_eq!(value_ref0 as *const f64 as *const u8, buffer_ptr.add(8));
+        assert_eq!(id_ref1 as *const u32 as *const u8, buffer_ptr.add(32));
+        assert_eq!(value_ref1 as *const f64 as *const u8, buffer_ptr.add(40));
+    }
+}
+
+#[test]
+fn test_field_reference_bool_validity() {
+    use db_core::storage::TableBuffer;
+
+    let mut buffer = TableBuffer::new_zeroed(64);
+
+    // Write valid bool values (0 and 1)
+    unsafe {
+        buffer.write_at::<u8>(0, 0); // false
+        buffer.write_at::<u8>(1, 1); // true
+
+        // Get references as bool
+        let false_ref = buffer.field_ref::<bool>(0).unwrap();
+        let true_ref = buffer.field_ref::<bool>(1).unwrap();
+
+        assert!(!*false_ref);
+        assert!(*true_ref);
+    }
+
+    // Note: Writing invalid bool values (not 0 or 1) is undefined behavior
+    // when reading as &bool. We rely on the write path to ensure only 0/1 are written.
+}
+
+#[test]
+fn test_field_reference_unaligned_access() {
+    use db_core::storage::TableBuffer;
+
+    let mut buffer = TableBuffer::new_zeroed(128);
+
+    // Write u32 at unaligned offset (offset 1)
+    let value = 0xDEADBEEFu32;
+    unsafe {
+        buffer.write_unaligned_at::<u32>(1, value);
+    }
+
+    // Get reference to unaligned data - should fail because offset 1 is not 4-byte aligned
+    unsafe {
+        let ref_u32 = buffer.field_ref::<u32>(1);
+        assert!(
+            ref_u32.is_none(),
+            "field_ref should reject unaligned access"
+        );
+
+        // But we can still read the value using read_unaligned_at
+        let read_value = buffer.read_unaligned_at::<u32>(1);
+        assert_eq!(read_value, 0xDEADBEEF);
+    }
+}
+
+#[test]
+fn test_field_reference_zero_sized_type() {
+    use db_core::storage::TableBuffer;
+
+    #[derive(Copy, Clone)]
+    struct ZeroSizedType;
+
+    let buffer = TableBuffer::new_zeroed(64);
+
+    // For zero-sized types, we should be able to get a reference at any offset
+    unsafe {
+        let ref_zst = buffer.field_ref::<ZeroSizedType>(0).unwrap();
+        let ref_zst2 = buffer.field_ref::<ZeroSizedType>(100).unwrap(); // Even beyond buffer bounds
+
+        // All references to ZST are equal (dangling)
+        assert!(std::ptr::eq(ref_zst, ref_zst2));
+
+        // Can still use the reference
+        let _ = *ref_zst; // No-op for ZST
+    }
+}

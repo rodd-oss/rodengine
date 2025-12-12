@@ -263,6 +263,96 @@ impl TableBuffer {
         ptr.read_unaligned()
     }
 
+    /// Returns a reference to a value of type `T` at the specified byte offset.
+    ///
+    /// This provides zero-copy access to data in the buffer. The reference points
+    /// directly to the memory in the buffer.
+    ///
+    /// # Safety
+    ///
+    /// - `offset` must be within the bounds of the buffer's initialized length
+    /// - `offset + size_of::<T>()` must not exceed the buffer's initialized length
+    /// - The memory must be initialized and valid for type `T`
+    /// - The offset must be properly aligned for type `T` (use `read_unaligned_at` for unaligned access)
+    /// - The reference must not outlive the buffer
+    ///
+    /// # Returns
+    ///
+    /// `Some(&T)` if the offset is within bounds and properly aligned,
+    /// `None` otherwise.
+    pub unsafe fn field_ref<T>(&self, offset: usize) -> Option<&T>
+    where
+        T: Copy,
+    {
+        // For zero-sized types, we can always return a reference
+        if std::mem::size_of::<T>() == 0 {
+            // Create a dangling pointer - all ZST references are equal
+            let ptr = std::ptr::NonNull::<T>::dangling().as_ptr();
+            return Some(&*ptr);
+        }
+
+        // Check bounds with overflow protection
+        let field_size = std::mem::size_of::<T>();
+        let field_end = offset.checked_add(field_size)?;
+
+        if field_end > self.len() {
+            return None;
+        }
+
+        // Check alignment
+        if !offset.is_multiple_of(std::mem::align_of::<T>()) {
+            return None;
+        }
+
+        let ptr = self.as_ptr().add(offset) as *const T;
+        Some(&*ptr)
+    }
+
+    /// Returns a mutable reference to a value of type `T` at the specified byte offset.
+    ///
+    /// This provides zero-copy mutable access to data in the buffer.
+    ///
+    /// # Safety
+    ///
+    /// - `offset` must be within the bounds of the buffer's initialized length
+    /// - `offset + size_of::<T>()` must not exceed the buffer's initialized length
+    /// - The memory must be initialized and valid for type `T`
+    /// - The offset must be properly aligned for type `T`
+    /// - No other references to this memory may exist
+    /// - The reference must not outlive the buffer
+    ///
+    /// # Returns
+    ///
+    /// `Some(&mut T)` if the offset is within bounds and properly aligned,
+    /// `None` otherwise.
+    pub unsafe fn field_mut_ref<T>(&mut self, offset: usize) -> Option<&mut T>
+    where
+        T: Copy,
+    {
+        // For zero-sized types, we can always return a reference
+        if std::mem::size_of::<T>() == 0 {
+            // Create a dangling pointer - all ZST references are equal
+            let ptr = std::ptr::NonNull::<T>::dangling().as_ptr();
+            return Some(&mut *ptr);
+        }
+
+        // Check bounds with overflow protection
+        let field_size = std::mem::size_of::<T>();
+        let field_end = offset.checked_add(field_size)?;
+
+        if field_end > self.len() {
+            return None;
+        }
+
+        // Check alignment
+        if !offset.is_multiple_of(std::mem::align_of::<T>()) {
+            return None;
+        }
+
+        let ptr = self.as_mut_ptr().add(offset) as *mut T;
+        Some(&mut *ptr)
+    }
+
     /// Writes a record (multiple fields) into the buffer at the specified record index.
     ///
     /// # Parameters
