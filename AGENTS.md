@@ -22,3 +22,4 @@
 - **No Cursor/Copilot rules** present.
 - **Rust/Go workspaces** exist but no code yet.
 - **Repository structure**: See `REPO_STRUCTURE.txt` for detailed project layout.
+- **Database project**: See `docs/new_requirments/db/` for in-memory database requirements and TDD test plans.
