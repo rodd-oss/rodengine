@@ -614,6 +614,300 @@ impl TableBuffer {
         unsafe { Ok(self.read_record(record_index, record_size, fields)) }
     }
 
+    /// Validates field offsets and sizes to prevent out‑of‑bounds access.
+    ///
+    /// This method performs comprehensive validation of field definitions
+    /// to ensure memory safety when accessing fields in the buffer.
+    ///
+    /// # Parameters
+    ///
+    /// - `record_size`: The size of each record in bytes
+    /// - `fields`: A slice of tuples containing field offsets and sizes
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if all fields are valid, or `Err(&'static str)` describing the first violation found.
+    ///
+    /// # Validation Rules
+    ///
+    /// 1. Each field offset must be within record bounds: `field_offset < record_size`
+    /// 2. Each field must fit within record: `field_offset + field_size ≤ record_size`
+    /// 3. No overflow in offset calculations: uses `checked_add`
+    /// 4. Non-overlapping fields (for fields with size > 0)
+    /// 5. Field alignment is respected (if alignment > 1)
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use db_core::storage::TableBuffer;
+    ///
+    /// let buffer = TableBuffer::new_zeroed(128);
+    /// let record_size = 32;
+    /// let fields = vec![(0, 4), (4, 4), (8, 1)]; // u32, f32, bool
+    ///
+    /// let result = buffer.validate_field_layout(record_size, &fields);
+    /// assert!(result.is_ok());
+    /// ```
+    pub fn validate_field_layout(
+        &self,
+        record_size: usize,
+        fields: &[(usize, usize)],
+    ) -> Result<(), &'static str> {
+        // Check record_size is valid
+        if record_size == 0 {
+            return Err("record_size must be > 0");
+        }
+
+        // Check each field
+        for &(field_offset, field_size) in fields {
+            // Check field offset within record
+            if field_offset >= record_size {
+                return Err("field offset exceeds record size");
+            }
+
+            // Check field size fits within record (with overflow protection)
+            let field_end = field_offset
+                .checked_add(field_size)
+                .ok_or("field_offset + field_size would overflow")?;
+
+            if field_end > record_size {
+                return Err("field data would exceed record bounds");
+            }
+        }
+
+        // Check for overlapping fields (only for fields with size > 0)
+        for (i, &(offset1, size1)) in fields.iter().enumerate() {
+            if size1 == 0 {
+                continue; // Zero-sized fields can overlap
+            }
+
+            let end1 = offset1
+                .checked_add(size1)
+                .ok_or("offset1 + size1 would overflow")?;
+
+            for &(offset2, size2) in fields.iter().skip(i + 1) {
+                if size2 == 0 {
+                    continue; // Zero-sized fields can overlap
+                }
+
+                let end2 = offset2
+                    .checked_add(size2)
+                    .ok_or("offset2 + size2 would overflow")?;
+
+                // Check if ranges [offset1, end1) and [offset2, end2) overlap
+                if offset1 < end2 && offset2 < end1 {
+                    return Err("overlapping fields detected");
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Validates that a record fits within the buffer bounds.
+    ///
+    /// # Parameters
+    ///
+    /// - `record_index`: The index of the record (0-based)
+    /// - `record_size`: The size of each record in bytes
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if the record fits within buffer bounds, or `Err(&'static str)` if not.
+    ///
+    /// # Validation Rules
+    ///
+    /// 1. `record_index * record_size` does not overflow
+    /// 2. `record_offset + record_size ≤ buffer.capacity()` (for writes)
+    /// 3. `record_offset + record_size ≤ buffer.len()` (for reads)
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use db_core::storage::TableBuffer;
+    ///
+    /// let buffer = TableBuffer::new_zeroed(128);
+    /// let record_size = 16;
+    ///
+    /// // Valid record index
+    /// let result = buffer.validate_record_bounds(0, record_size, true);
+    /// assert!(result.is_ok());
+    ///
+    /// // Invalid record index (would exceed buffer)
+    /// let result = buffer.validate_record_bounds(10, record_size, true);
+    /// assert!(result.is_err());
+    /// ```
+    pub fn validate_record_bounds(
+        &self,
+        record_index: usize,
+        record_size: usize,
+        for_write: bool,
+    ) -> Result<(), &'static str> {
+        // Check record offset calculation
+        let record_offset = record_index
+            .checked_mul(record_size)
+            .ok_or("record_index * record_size would overflow")?;
+
+        // Check record fits in buffer
+        let record_end = record_offset
+            .checked_add(record_size)
+            .ok_or("record_offset + record_size would overflow")?;
+
+        if for_write {
+            // For writes, check against capacity (can write to uninitialized memory)
+            if record_end > self.capacity() {
+                return Err("record would exceed buffer capacity");
+            }
+        } else {
+            // For reads, check against length (must read initialized memory)
+            if record_end > self.len() {
+                return Err("record would exceed buffer length");
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Validates field alignment requirements.
+    ///
+    /// This method checks that each field's offset meets its type's alignment requirement.
+    /// For zero-sized types, alignment is always satisfied.
+    ///
+    /// # Parameters
+    ///
+    /// - `fields`: A slice of tuples containing field offsets and type identifiers
+    /// - `get_alignment`: A function that returns alignment for a given type identifier
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if all fields are properly aligned, or `Err(&'static str)` if not.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use db_core::storage::TableBuffer;
+    /// use std::mem::align_of;
+    ///
+    /// let buffer = TableBuffer::new_zeroed(128);
+    /// let fields = vec![
+    ///     (0, "u32"),  // offset 0, alignment 4
+    ///     (4, "f32"),  // offset 4, alignment 4
+    ///     (8, "bool"), // offset 8, alignment 1
+    /// ];
+    ///
+    /// let get_alignment = |type_name: &str| -> usize {
+    ///     match type_name {
+    ///         "u32" => align_of::<u32>(),
+    ///         "f32" => align_of::<f32>(),
+    ///         "bool" => align_of::<bool>(),
+    ///         _ => 1,
+    ///     }
+    /// };
+    ///
+    /// let result = buffer.validate_field_alignment(&fields, get_alignment);
+    /// assert!(result.is_ok());
+    /// ```
+    pub fn validate_field_alignment<F>(
+        &self,
+        fields: &[(usize, &str)],
+        get_alignment: F,
+    ) -> Result<(), &'static str>
+    where
+        F: Fn(&str) -> usize,
+    {
+        for &(field_offset, type_name) in fields {
+            let alignment = get_alignment(type_name);
+
+            // Zero-sized types are always aligned
+            if alignment == 0 {
+                continue;
+            }
+
+            // Check alignment
+            if !field_offset.is_multiple_of(alignment) {
+                return Err("field offset does not meet alignment requirement");
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Validates that a field access would be safe.
+    ///
+    /// This method checks all conditions required for safe field access:
+    /// 1. Field fits within record bounds
+    /// 2. Field fits within buffer bounds
+    /// 3. Field offset is properly aligned for the type
+    /// 4. No overflow in calculations
+    ///
+    /// # Parameters
+    ///
+    /// - `record_index`: The index of the record containing the field
+    /// - `record_size`: The size of each record in bytes
+    /// - `field_offset`: The offset of the field within the record
+    /// - `field_size`: The size of the field in bytes
+    /// - `alignment`: The required alignment for the field type
+    /// - `for_write`: Whether this is for write access (uses capacity) or read (uses length)
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if field access would be safe, or `Err(&'static str)` if not.
+    pub fn validate_field_access(
+        &self,
+        record_index: usize,
+        record_size: usize,
+        field_offset: usize,
+        field_size: usize,
+        alignment: usize,
+        for_write: bool,
+    ) -> Result<(), &'static str> {
+        // Validate record bounds first
+        self.validate_record_bounds(record_index, record_size, for_write)?;
+
+        // Check field offset within record
+        if field_offset >= record_size {
+            return Err("field offset exceeds record size");
+        }
+
+        // Check field size fits within record (with overflow protection)
+        let field_end = field_offset
+            .checked_add(field_size)
+            .ok_or("field_offset + field_size would overflow")?;
+
+        if field_end > record_size {
+            return Err("field data would exceed record bounds");
+        }
+
+        // Check alignment (skip for zero-sized types)
+        if alignment > 0 && !field_offset.is_multiple_of(alignment) {
+            return Err("field offset does not meet alignment requirement");
+        }
+
+        // Calculate absolute field offset in buffer
+        let record_offset = record_index
+            .checked_mul(record_size)
+            .ok_or("record_index * record_size would overflow")?;
+
+        let absolute_field_offset = record_offset
+            .checked_add(field_offset)
+            .ok_or("record_offset + field_offset would overflow")?;
+
+        let absolute_field_end = absolute_field_offset
+            .checked_add(field_size)
+            .ok_or("absolute_field_offset + field_size would overflow")?;
+
+        // Check field fits in buffer
+        if for_write {
+            if absolute_field_end > self.capacity() {
+                return Err("field write would exceed buffer capacity");
+            }
+        } else if absolute_field_end > self.len() {
+            return Err("field read would exceed buffer length");
+        }
+
+        Ok(())
+    }
+
     /// Returns an iterator over records in the buffer.
     ///
     /// The iterator yields slices of bytes, each representing one record.

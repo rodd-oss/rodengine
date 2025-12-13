@@ -12,7 +12,7 @@ feature_zero_copy_start
 [x]task_zc_2: Implement iterator over table records that yields references to each record.
 feature_zero_copy_end
 feature_memory_safety_start
-[]task_ms_1: Validate field offsets and sizes to prevent out‑of‑bounds access.
+[x]task_ms_1: Validate field offsets and sizes to prevent out‑of‑bounds access.
 []task_ms_2: Add bounds checking for record indices and field indices.
 feature_memory_safety_end
 phase_foundation_end
