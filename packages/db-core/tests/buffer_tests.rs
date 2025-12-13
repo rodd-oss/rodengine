@@ -1843,3 +1843,461 @@ fn test_validate_field_access() {
     assert!(result.is_err(), "Overflow should be caught");
     assert!(result.unwrap_err().contains("overflow"));
 }
+
+// Tests for task_ms_2: Add bounds checking for record indices and field indices
+#[test]
+fn test_record_index_bounds_valid() {
+    use db_core::storage::TableBuffer;
+
+    let mut buffer = TableBuffer::new_zeroed(128);
+    let record_size = 16;
+
+    // Write 3 records
+    for i in 0..3 {
+        let id_data = (1000 + i as u32).to_ne_bytes();
+        let fields = vec![(0, id_data.as_slice())];
+        unsafe {
+            buffer.write_record(i, record_size, &fields);
+        }
+    }
+
+    // Test valid record indices
+    for i in 0..3 {
+        let result = buffer.validate_record_bounds(i, record_size, false);
+        assert!(result.is_ok(), "Valid record index {} should pass", i);
+    }
+
+    // Test record count calculation
+    // Note: With new_zeroed, buffer starts with len() == capacity() == 128
+    // Writing records doesn't change the length since we're writing into already-initialized memory
+    let total_bytes = buffer.len();
+    assert_eq!(total_bytes, 128, "Buffer should have 128 bytes total");
+}
+
+#[test]
+fn test_record_index_out_of_bounds() {
+    use db_core::storage::TableBuffer;
+
+    let mut buffer = TableBuffer::new_zeroed(128);
+    let record_size = 16;
+
+    // Write 3 records
+    for i in 0..3 {
+        let id_data = (1000 + i as u32).to_ne_bytes();
+        let fields = vec![(0, id_data.as_slice())];
+        unsafe {
+            buffer.write_record(i, record_size, &fields);
+        }
+    }
+
+    // Test out-of-bounds record indices
+    // With buffer size 128 and record_size 16, we can have up to 8 records (indices 0-7)
+    // So index 8 would be out of bounds (8 * 16 = 128, which equals buffer size,
+    // but record would be at bytes 128-143, exceeding buffer)
+    let invalid_indices = [8, 10, usize::MAX];
+
+    for &index in &invalid_indices {
+        let result = buffer.validate_record_bounds(index, record_size, false);
+        assert!(
+            result.is_err(),
+            "Out-of-bounds record index {} should fail",
+            index
+        );
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("exceed") || err.contains("overflow"),
+            "Error should mention bounds or overflow: {}",
+            err
+        );
+    }
+}
+
+#[test]
+fn test_record_index_empty_table() {
+    use db_core::storage::TableBuffer;
+
+    // For new_zeroed, all bytes are initialized to zero, so len() == capacity()
+    let buffer = TableBuffer::new_zeroed(128);
+    let record_size = 16;
+
+    // Table has all bytes initialized to zero, so reading should be allowed
+    let result = buffer.validate_record_bounds(0, record_size, false);
+    assert!(
+        result.is_ok(),
+        "Zeroed buffer should allow record index 0 for read"
+    );
+
+    // Should also allow for write (uses capacity)
+    let result = buffer.validate_record_bounds(0, record_size, true);
+    assert!(
+        result.is_ok(),
+        "Zeroed buffer should allow record index 0 for write"
+    );
+
+    // Test with truly empty buffer (no initialized bytes)
+    let buffer = TableBuffer::new_with_capacity(128);
+    let result = buffer.validate_record_bounds(0, record_size, false);
+    assert!(
+        result.is_err(),
+        "Empty buffer (no initialized bytes) should reject record index 0 for read"
+    );
+
+    // But should allow for write (uses capacity)
+    let result = buffer.validate_record_bounds(0, record_size, true);
+    assert!(
+        result.is_ok(),
+        "Empty buffer should allow record index 0 for write"
+    );
+}
+
+#[test]
+fn test_field_index_bounds_valid() {
+    use db_core::storage::TableBuffer;
+
+    let mut buffer = TableBuffer::new_zeroed(128);
+    let record_size = 32;
+
+    // Write a record with multiple fields
+    let id_data = 42u32.to_ne_bytes();
+    let score_data = 3.5f32.to_ne_bytes();
+    let active_data = [1u8];
+    let name_data = b"test";
+
+    let fields = vec![
+        (0, id_data.as_slice()),
+        (4, score_data.as_slice()),
+        (8, active_data.as_slice()),
+        (9, name_data),
+    ];
+
+    unsafe {
+        buffer.write_record(0, record_size, &fields);
+    }
+
+    // Test valid field indices (offsets)
+    let valid_offsets = [0, 4, 8, 9];
+    let field_sizes = [4, 4, 1, 4]; // u32, f32, bool, 4-byte string
+
+    for (i, &offset) in valid_offsets.iter().enumerate() {
+        let result = buffer.validate_field_access(
+            0,
+            record_size,
+            offset,
+            field_sizes[i],
+            1, // alignment 1 for test
+            false,
+        );
+        assert!(result.is_ok(), "Valid field offset {} should pass", offset);
+    }
+}
+
+#[test]
+fn test_field_index_out_of_bounds() {
+    use db_core::storage::TableBuffer;
+
+    let mut buffer = TableBuffer::new_zeroed(128);
+    let record_size = 16;
+
+    // Write a record
+    let id_data = 42u32.to_ne_bytes();
+    let fields = vec![(0, id_data.as_slice())];
+    unsafe {
+        buffer.write_record(0, record_size, &fields);
+    }
+
+    // Test field offsets that exceed record size
+    let invalid_offsets = [16, 20, usize::MAX];
+
+    for &offset in &invalid_offsets {
+        let result = buffer.validate_field_access(0, record_size, offset, 4, 4, false);
+        assert!(
+            result.is_err(),
+            "Field offset {} exceeding record size should fail",
+            offset
+        );
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("exceed") || err.contains("overflow"),
+            "Error should mention bounds or overflow: {}",
+            err
+        );
+    }
+}
+
+#[test]
+fn test_field_index_zero_fields() {
+    use db_core::storage::TableBuffer;
+
+    let buffer = TableBuffer::new_zeroed(128);
+    let record_size = 0; // Zero-sized record (edge case)
+
+    // With zero record size, any field offset should fail
+    let result = buffer.validate_field_access(0, record_size, 0, 4, 4, false);
+    assert!(
+        result.is_err(),
+        "Zero-sized record should reject any field access"
+    );
+}
+
+#[test]
+fn test_combined_bounds_valid_record_invalid_field() {
+    use db_core::storage::TableBuffer;
+
+    let mut buffer = TableBuffer::new_zeroed(128);
+    let record_size = 16;
+
+    // Write a record
+    let id_data = 42u32.to_ne_bytes();
+    let fields = vec![(0, id_data.as_slice())];
+    unsafe {
+        buffer.write_record(0, record_size, &fields);
+    }
+
+    // Valid record index but invalid field index (exceeds record size)
+    let result = buffer.validate_field_access(0, record_size, 20, 4, 4, false);
+    assert!(
+        result.is_err(),
+        "Valid record with invalid field should fail"
+    );
+    let err = result.unwrap_err();
+    // Check for any of the possible error messages
+    assert!(
+        err.contains("exceed") || err.contains("bounds"),
+        "Error should mention bounds: {}",
+        err
+    );
+}
+
+#[test]
+fn test_combined_bounds_invalid_record_valid_field() {
+    use db_core::storage::TableBuffer;
+
+    let mut buffer = TableBuffer::new_zeroed(128);
+    let record_size = 16;
+
+    // Write a record
+    let id_data = 42u32.to_ne_bytes();
+    let fields = vec![(0, id_data.as_slice())];
+    unsafe {
+        buffer.write_record(0, record_size, &fields);
+    }
+
+    // Invalid record index but valid field offset
+    let invalid_record_index = 10;
+    let result = buffer.validate_field_access(invalid_record_index, record_size, 0, 4, 4, false);
+    assert!(
+        result.is_err(),
+        "Invalid record with valid field should fail"
+    );
+    assert!(result.unwrap_err().contains("exceed"));
+}
+
+#[test]
+fn test_combined_bounds_both_indices_out_of_bounds() {
+    use db_core::storage::TableBuffer;
+
+    let buffer = TableBuffer::new_zeroed(128);
+    let record_size = 16;
+
+    // Both indices invalid
+    let result = buffer.validate_field_access(10, record_size, 20, 4, 4, false);
+    assert!(result.is_err(), "Both indices invalid should fail");
+    // Should fail on record bounds check first
+    assert!(result.unwrap_err().contains("exceed"));
+}
+
+#[test]
+fn test_large_indices_near_capacity() {
+    use db_core::storage::TableBuffer;
+
+    let capacity = 1024;
+    let mut buffer = TableBuffer::new_zeroed(capacity);
+    let record_size = 32;
+
+    // Calculate maximum number of records that fit in capacity
+    let max_records = capacity / record_size;
+    let last_valid_record = max_records - 1;
+
+    // Write to last valid record
+    let id_data = 42u32.to_ne_bytes();
+    let fields = vec![(0, id_data.as_slice())];
+
+    let result = buffer.write_record_checked(last_valid_record, record_size, &fields);
+    assert!(
+        result.is_ok(),
+        "Should be able to write to last valid record"
+    );
+
+    // Try to write one past last record
+    let result = buffer.write_record_checked(max_records, record_size, &fields);
+    assert!(result.is_err(), "Should fail to write one past last record");
+    assert!(result.unwrap_err().contains("exceed buffer capacity"));
+}
+
+#[test]
+fn test_bounds_check_before_unsafe_access() {
+    use db_core::storage::TableBuffer;
+
+    let mut buffer = TableBuffer::new_zeroed(64);
+    let record_size = 16;
+
+    // Write a record
+    let id_data = 42u32.to_ne_bytes();
+    let fields = vec![(0, id_data.as_slice())];
+    unsafe {
+        buffer.write_record(0, record_size, &fields);
+    }
+
+    // Test that field_ref performs bounds checking
+    unsafe {
+        // Valid access
+        let valid_ref = buffer.field_ref::<u32>(0);
+        assert!(valid_ref.is_some(), "Valid access should succeed");
+
+        // Invalid access (out of bounds)
+        let invalid_ref = buffer.field_ref::<u32>(buffer.len() - 2);
+        assert!(
+            invalid_ref.is_none(),
+            "Out-of-bounds access should return None"
+        );
+
+        // Invalid access (unaligned)
+        let unaligned_ref = buffer.field_ref::<u32>(1);
+        assert!(
+            unaligned_ref.is_none(),
+            "Unaligned access should return None"
+        );
+    }
+}
+
+#[test]
+fn test_error_messages_include_context() {
+    use db_core::storage::TableBuffer;
+
+    let buffer = TableBuffer::new_zeroed(128);
+    let record_size = 16;
+
+    // Test record index error
+    let result = buffer.validate_record_bounds(10, record_size, false);
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert!(
+        err.contains("exceed") || err.contains("overflow"),
+        "Error should mention bounds: {}",
+        err
+    );
+
+    // Test field offset error
+    let result = buffer.validate_field_access(0, record_size, 20, 4, 4, false);
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert!(
+        err.contains("exceed") || err.contains("offset"),
+        "Error should mention field offset: {}",
+        err
+    );
+
+    // Test alignment error
+    let result = buffer.validate_field_access(0, record_size, 1, 4, 4, false);
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert!(
+        err.contains("alignment"),
+        "Error should mention alignment: {}",
+        err
+    );
+}
+
+#[test]
+fn test_bounds_check_not_skipped_in_release() {
+    use db_core::storage::TableBuffer;
+
+    let buffer = TableBuffer::new_zeroed(64);
+    let record_size = 16;
+
+    // This test verifies bounds checking happens even in release mode
+    // We test with checked methods which should always perform bounds checking
+
+    let result = buffer.validate_record_bounds(10, record_size, false);
+    assert!(
+        result.is_err(),
+        "Bounds checking should work in release mode"
+    );
+
+    let result = buffer.validate_field_access(0, record_size, 20, 4, 4, false);
+    assert!(
+        result.is_err(),
+        "Bounds checking should work in release mode"
+    );
+}
+
+#[test]
+fn test_record_iter_bounds() {
+    use db_core::storage::TableBuffer;
+
+    let mut buffer = TableBuffer::new_zeroed(128);
+    let record_size = 16;
+
+    // Write 3 records
+    for i in 0..3 {
+        let id_data = (1000 + i as u32).to_ne_bytes();
+        let fields = vec![(0, id_data.as_slice())];
+        unsafe {
+            buffer.write_record(i, record_size, &fields);
+        }
+    }
+
+    // Test record iterator respects bounds
+    // Note: record_iter divides total bytes by record_size to get record count
+    // With new_zeroed(128), we have 128 bytes total = 8 records of 16 bytes each
+    // We wrote data into first 3 records, but iterator will iterate over all 8
+    let iter = buffer.record_iter(record_size);
+    let count = iter.count();
+
+    assert_eq!(
+        count, 8,
+        "Iterator should yield 8 records (128 bytes / 16 bytes per record)"
+    );
+
+    // Test double-ended iteration
+    let iter = buffer.record_iter(record_size);
+    assert_eq!(iter.len(), 8);
+
+    // Test size_hint
+    let (min, max) = iter.size_hint();
+    assert_eq!(min, 8);
+    assert_eq!(max, Some(8));
+}
+
+#[test]
+fn test_read_write_checked_methods() {
+    use db_core::storage::TableBuffer;
+
+    let mut buffer = TableBuffer::new_zeroed(128);
+    let record_size = 16;
+
+    // Test write_record_checked with valid bounds
+    let id_data = 42u32.to_ne_bytes();
+    let score_data = 3.5f32.to_ne_bytes();
+    let fields = vec![(0, id_data.as_slice()), (4, score_data.as_slice())];
+
+    let result = buffer.write_record_checked(0, record_size, &fields);
+    assert!(result.is_ok(), "Valid write should succeed");
+
+    // Test read_record_checked with valid bounds
+    let read_fields = vec![(0, 4), (4, 4)];
+    let result = buffer.read_record_checked(0, record_size, &read_fields);
+    assert!(result.is_ok(), "Valid read should succeed");
+    let field_data = result.unwrap();
+    assert_eq!(field_data.len(), 2);
+    assert_eq!(field_data[0], id_data.as_slice());
+    assert_eq!(field_data[1], score_data.as_slice());
+
+    // Test write_record_checked with invalid bounds
+    let result = buffer.write_record_checked(10, record_size, &fields);
+    assert!(result.is_err(), "Invalid write should fail");
+
+    // Test read_record_checked with invalid bounds
+    let result = buffer.read_record_checked(10, record_size, &read_fields);
+    assert!(result.is_err(), "Invalid read should fail");
+}

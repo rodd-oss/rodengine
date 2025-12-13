@@ -13,7 +13,7 @@ feature_zero_copy_start
 feature_zero_copy_end
 feature_memory_safety_start
 [x]task_ms_1: Validate field offsets and sizes to prevent out‑of‑bounds access.
-[]task_ms_2: Add bounds checking for record indices and field indices.
+[x]task_ms_2: Add bounds checking for record indices and field indices.
 feature_memory_safety_end
 phase_foundation_end
 

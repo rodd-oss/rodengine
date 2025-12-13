@@ -376,8 +376,29 @@ impl TableBuffer {
     ) {
         let record_offset = record_index * record_size;
 
+        // Debug assertions to catch common errors in development
+        debug_assert!(
+            record_offset + record_size <= self.capacity(),
+            "record would exceed buffer capacity"
+        );
+
         for &(field_offset, field_data) in fields {
             let target_offset = record_offset + field_offset;
+            let _target_end = target_offset + field_data.len();
+
+            debug_assert!(
+                field_offset < record_size,
+                "field offset exceeds record size"
+            );
+            debug_assert!(
+                _target_end <= record_offset + record_size,
+                "field data would exceed record bounds"
+            );
+            debug_assert!(
+                _target_end <= self.capacity(),
+                "field write would exceed buffer capacity"
+            );
+
             let target_ptr = self.as_mut_ptr().add(target_offset);
             std::ptr::copy_nonoverlapping(field_data.as_ptr(), target_ptr, field_data.len());
         }
