@@ -35,7 +35,8 @@
 //!     .add_field("id".to_string(), Type::I32)
 //!     .add_field("score".to_string(), Type::F64)
 //!     .add_field("active".to_string(), Type::Bool)
-//!     .build();
+//!     .build()
+//!     .unwrap();
 //!
 //! assert_eq!(fields.len(), 3);
 //! assert_eq!(fields[0].offset(), 0);    // id at offset 0
@@ -57,6 +58,12 @@
 pub mod field;
 pub mod table;
 pub mod types;
+
+pub use field::{
+    align_offset, calculate_record_size, calculate_record_size_checked, Field, FieldBuilder,
+    FieldError, FieldListBuilder,
+};
+pub use types::{Type, Value};
 
 #[cfg(test)]
 mod tests {

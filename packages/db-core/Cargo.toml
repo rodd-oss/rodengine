@@ -10,6 +10,7 @@ license = "MIT OR Apache-2.0"
 arc-swap = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
+db-types = { path = "../db-types" }
 
 [dev-dependencies]
 criterion = "0.5"
