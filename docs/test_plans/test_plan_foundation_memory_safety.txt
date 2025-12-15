@@ -1,0 +1,76 @@
+test_plan_start
+test_memory_safety_start
+test_Field_validate_bounds_01_start
+action: call with field fitting exactly within buffer - inputs: field=Field::new("test", Type::I32, 0), buffer_len=4 - expected_results: returns Ok(())
+test_Field_validate_bounds_01_end
+test_Field_validate_bounds_02_start
+action: call with field offset zero and size equal buffer length - inputs: field=Field::new("test", Type::I32, 0), buffer_len=4 - expected_results: returns Ok(())
+test_Field_validate_bounds_02_end
+test_Field_validate_bounds_03_start
+action: call with field offset non-zero and size fits - inputs: field=Field::new("test", Type::I32, 4), buffer_len=8 - expected_results: returns Ok(())
+test_Field_validate_bounds_03_end
+test_Field_validate_bounds_04_start
+action: call with field offset zero, size zero (edge case) - inputs: field=Field::new("test", Type::Bool, 0) with size 1, buffer_len=1 - expected_results: returns Ok(())
+test_Field_validate_bounds_04_end
+test_Field_validate_bounds_05_start
+action: call with offset beyond buffer length - inputs: field=Field::new("test", Type::I32, 5), buffer_len=5 - expected_results: returns Err(FieldError::OutOfBounds)
+test_Field_validate_bounds_05_end
+test_Field_validate_bounds_06_start
+action: call with offset+size exceeds buffer length - inputs: field=Field::new("test", Type::I32, 1), buffer_len=4 - expected_results: returns Err(FieldError::OutOfBounds)
+test_Field_validate_bounds_06_end
+test_Field_validate_bounds_07_start
+action: call with offset+size overflow (wrap around) - inputs: field=Field::new("test", Type::I32, usize::MAX - 2), buffer_len=usize::MAX - expected_results: returns Err(FieldError::OutOfBounds)
+test_Field_validate_bounds_07_end
+test_Field_validate_bounds_08_start
+action: call with buffer length zero, offset zero, size zero - inputs: field=Field::new("test", Type::Bool, 0) with size 1, buffer_len=0 - expected_results: returns Err(FieldError::OutOfBounds)
+test_Field_validate_bounds_08_end
+test_Field_validate_bounds_09_start
+action: call with field offset aligned but size mismatch - inputs: field=Field::new("test", Type::F64, 0), buffer_len=4 - expected_results: returns Err(FieldError::OutOfBounds)
+test_Field_validate_bounds_09_end
+test_TableBuffer_validate_record_index_01_start
+action: call with valid index zero and record size fits buffer - inputs: buffer=TableBuffer::new(8), index=0, record_size=8 - expected_results: returns Ok(())
+test_TableBuffer_validate_record_index_01_end
+test_TableBuffer_validate_record_index_02_start
+action: call with valid index non-zero and record size fits buffer - inputs: buffer=TableBuffer::new(16), index=1, record_size=8 - expected_results: returns Ok(())
+test_TableBuffer_validate_record_index_02_end
+test_TableBuffer_validate_record_index_03_start
+action: call with index zero and record size zero (edge case) - inputs: buffer=TableBuffer::new(0), index=0, record_size=0 - expected_results: returns Ok(())
+test_TableBuffer_validate_record_index_03_end
+test_TableBuffer_validate_record_index_04_start
+action: call with index zero and record size equals buffer length - inputs: buffer=TableBuffer::new(8), index=0, record_size=8 - expected_results: returns Ok(())
+test_TableBuffer_validate_record_index_04_end
+test_TableBuffer_validate_record_index_05_start
+action: call with index out of bounds - inputs: buffer=TableBuffer::new(8), index=1, record_size=8 - expected_results: returns Err(BufferError::OutOfBounds)
+test_TableBuffer_validate_record_index_05_end
+test_TableBuffer_validate_record_index_06_start
+action: call with record size zero and index beyond buffer length - inputs: buffer=TableBuffer::new(0), index=1, record_size=0 - expected_results: returns Err(BufferError::OutOfBounds)
+test_TableBuffer_validate_record_index_06_end
+test_TableBuffer_validate_record_index_07_start
+action: call with multiplication overflow - inputs: buffer=TableBuffer::new(usize::MAX), index=usize::MAX, record_size=usize::MAX - expected_results: returns Err(BufferError::OutOfBounds)
+test_TableBuffer_validate_record_index_07_end
+test_TableBuffer_validate_record_index_08_start
+action: call with buffer length zero, record size positive, index zero - inputs: buffer=TableBuffer::new(0), index=0, record_size=4 - expected_results: returns Err(BufferError::OutOfBounds)
+test_TableBuffer_validate_record_index_08_end
+test_TableBuffer_validate_record_index_09_start
+action: call with buffer length insufficient for record size - inputs: buffer=TableBuffer::new(4), index=0, record_size=8 - expected_results: returns Err(BufferError::OutOfBounds)
+test_TableBuffer_validate_record_index_09_end
+test_FieldList_validate_field_index_01_start
+action: call with valid index zero and non-empty list - inputs: fields=[Field::new("a", Type::I32, 0)], index=0 - expected_results: returns Ok(())
+test_FieldList_validate_field_index_01_end
+test_FieldList_validate_field_index_02_start
+action: call with valid middle index - inputs: fields=[Field::new("a", Type::I32, 0), Field::new("b", Type::I32, 4), Field::new("c", Type::I32, 8)], index=1 - expected_results: returns Ok(())
+test_FieldList_validate_field_index_02_end
+test_FieldList_validate_field_index_03_start
+action: call with valid last index - inputs: fields=[Field::new("a", Type::I32, 0), Field::new("b", Type::I32, 4)], index=1 - expected_results: returns Ok(())
+test_FieldList_validate_field_index_03_end
+test_FieldList_validate_field_index_04_start
+action: call with index out of bounds - inputs: fields=[Field::new("a", Type::I32, 0)], index=1 - expected_results: returns Err(FieldError::OutOfBounds)
+test_FieldList_validate_field_index_04_end
+test_FieldList_validate_field_index_05_start
+action: call with empty list and index zero - inputs: fields=[], index=0 - expected_results: returns Err(FieldError::OutOfBounds)
+test_FieldList_validate_field_index_05_end
+test_FieldList_validate_field_index_06_start
+action: call with maximum usize index - inputs: fields=[Field::new("a", Type::I32, 0)], index=usize::MAX - expected_results: returns Err(FieldError::OutOfBounds)
+test_FieldList_validate_field_index_06_end
+test_memory_safety_end
+test_plan_end

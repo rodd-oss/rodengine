@@ -1,0 +1,76 @@
+test_plan_start
+test_zero_copy_start
+test_Field_read_ref_01_start
+action: call with valid buffer and aligned offset - inputs: field=Field::new("test", Type::I32, 0), buffer=[0,0,0,42] - expected_results: returns reference to i32 with value 42
+test_Field_read_ref_01_end
+test_Field_read_ref_02_start
+action: call with buffer exactly field size - inputs: field=Field::new("test", Type::I32, 0), buffer=[1,0,0,0] - expected_results: returns reference to i32 with value 1
+test_Field_read_ref_02_end
+test_Field_read_ref_03_start
+action: call with non-zero offset - inputs: field=Field::new("test", Type::I32, 4), buffer=[0,0,0,0, 99,0,0,0] - expected_results: returns reference to i32 with value 99 at offset 4
+test_Field_read_ref_03_end
+test_Field_read_ref_04_start
+action: call with buffer too small - inputs: field=Field::new("test", Type::I32, 0), buffer=[0,0,0] - expected_results: panics or returns error
+test_Field_read_ref_04_end
+test_Field_read_ref_05_start
+action: call with misaligned offset - inputs: field=Field::new("test", Type::I32, 1), buffer=[0,0,0,0,0] - expected_results: panics or returns error
+test_Field_read_ref_05_end
+test_Field_read_ref_06_start
+action: call with f64 type - inputs: field=Field::new("score", Type::F64, 0), buffer=[0,0,0,0,0,0,0,0] - expected_results: returns reference to f64 with value 0.0
+test_Field_read_ref_06_end
+test_Field_read_ref_07_start
+action: call with bool type - inputs: field=Field::new("active", Type::Bool, 0), buffer=[1] - expected_results: returns reference to bool with value true
+test_Field_read_ref_07_end
+test_Field_read_ref_08_start
+action: call with u64 type at aligned offset 8 - inputs: field=Field::new("id", Type::U64, 8), buffer=[0;16] - expected_results: returns reference to u64 with value 0
+test_Field_read_ref_08_end
+test_Field_read_ref_09_start
+action: call with multiple fields in same buffer - inputs: field1=Field::new("a", Type::I32, 0), field2=Field::new("b", Type::I32, 4), buffer=[1,0,0,0, 2,0,0,0] - expected_results: field1 returns reference to 1, field2 returns reference to 2
+test_Field_read_ref_09_end
+test_TableBuffer_field_ref_01_start
+action: call with valid record index and field - inputs: buffer=TableBuffer::new(100).write_record(0, fields=[Field::new("id", Type::I32, 0)], values=[Value::I32(42)]), record_index=0, field=Field::new("id", Type::I32, 0) - expected_results: returns reference to i32 with value 42
+test_TableBuffer_field_ref_01_end
+test_TableBuffer_field_ref_02_start
+action: call with multiple records - inputs: buffer=TableBuffer::new(100).write_record(0, fields=[Field::new("id", Type::I32, 0)], values=[Value::I32(42)]).write_record(8, fields=[Field::new("id", Type::I32, 0)], values=[Value::I32(99)]), record_index=1, field=Field::new("id", Type::I32, 0) - expected_results: returns reference to i32 with value 99
+test_TableBuffer_field_ref_02_end
+test_TableBuffer_field_ref_03_start
+action: call with out-of-bounds record index - inputs: buffer=TableBuffer::new(100), record_index=5, field=Field::new("id", Type::I32, 0) - expected_results: panics or returns error
+test_TableBuffer_field_ref_03_end
+test_TableBuffer_field_ref_04_start
+action: call with field offset beyond record boundary - inputs: buffer=TableBuffer::new(100).write_record(0, fields=[Field::new("id", Type::I32, 0)], values=[Value::I32(1)]), record_index=0, field=Field::new("invalid", Type::I32, 100) - expected_results: panics or returns error
+test_TableBuffer_field_ref_04_end
+test_TableBuffer_field_ref_05_start
+action: call with different field types - inputs: buffer=TableBuffer::new(100).write_record(0, fields=[Field::new("score", Type::F64, 0)], values=[Value::F64(3.14)]), record_index=0, field=Field::new("score", Type::F64, 0) - expected_results: returns reference to f64 with value 3.14
+test_TableBuffer_field_ref_05_end
+test_TableBuffer_record_ref_01_start
+action: call with valid record index - inputs: buffer=TableBuffer::new(100).write_record(0, fields=[Field::new("a", Type::I32, 0), Field::new("b", Type::I32, 4)], values=[Value::I32(1), Value::I32(2)]), index=0, record_size=8 - expected_results: returns reference to record slice of length 8
+test_TableBuffer_record_ref_01_end
+test_TableBuffer_record_ref_02_start
+action: call with index beyond record count - inputs: buffer=TableBuffer::new(100), index=5, record_size=8 - expected_results: panics or returns error
+test_TableBuffer_record_ref_02_end
+test_TableBuffer_record_ref_03_start
+action: call with empty buffer - inputs: buffer=TableBuffer::new(0), index=0, record_size=8 - expected_results: panics or returns error
+test_TableBuffer_record_ref_03_end
+test_TableBuffer_record_ref_04_start
+action: call with partial record at end - inputs: buffer=TableBuffer::new(100).write_record(0, fields=[Field::new("a", Type::I32, 0), Field::new("b", Type::I32, 4)], values=[Value::I32(1), Value::I32(2)]), index=0, record_size=8 - expected_results: returns reference to valid slice
+test_TableBuffer_record_ref_04_end
+test_TableBuffer_record_ref_05_start
+action: call with multiple records - inputs: buffer=TableBuffer::new(100).write_record(0, fields=[Field::new("a", Type::I32, 0), Field::new("b", Type::I32, 4)], values=[Value::I32(1), Value::I32(2)]).write_record(8, fields=[Field::new("a", Type::I32, 0), Field::new("b", Type::I32, 4)], values=[Value::I32(3), Value::I32(4)]), index=1, record_size=8 - expected_results: returns reference to second record slice
+test_TableBuffer_record_ref_05_end
+test_TableBuffer_iter_records_01_start
+action: iterate over empty buffer - inputs: buffer=TableBuffer::new(100), record_size=8 - expected_results: iterator yields no items
+test_TableBuffer_iter_records_01_end
+test_TableBuffer_iter_records_02_start
+action: iterate over single record - inputs: buffer=TableBuffer::new(100).write_record(0, fields=[Field::new("a", Type::I32, 0), Field::new("b", Type::I32, 4)], values=[Value::I32(1), Value::I32(2)]), record_size=8 - expected_results: iterator yields one slice of length 8
+test_TableBuffer_iter_records_02_end
+test_TableBuffer_iter_records_03_start
+action: iterate over multiple records - inputs: buffer=TableBuffer::new(100).write_record(0, fields=[Field::new("a", Type::I32, 0), Field::new("b", Type::I32, 4)], values=[Value::I32(1), Value::I32(2)]).write_record(8, fields=[Field::new("a", Type::I32, 0), Field::new("b", Type::I32, 4)], values=[Value::I32(3), Value::I32(4)]).write_record(16, fields=[Field::new("a", Type::I32, 0), Field::new("b", Type::I32, 4)], values=[Value::I32(5), Value::I32(6)]), record_size=8 - expected_results: iterator yields three slices in order
+test_TableBuffer_iter_records_03_end
+test_TableBuffer_iter_records_04_start
+action: iterate with partial buffer at end - inputs: buffer=TableBuffer::new(100).write_record(0, fields=[Field::new("a", Type::I32, 0), Field::new("b", Type::I32, 4)], values=[Value::I32(1), Value::I32(2)]), record_size=8, buffer length=8 - expected_results: iterator yields one slice
+test_TableBuffer_iter_records_04_end
+test_TableBuffer_iter_records_05_start
+action: iterate while mutating buffer - inputs: buffer=TableBuffer::new(100).write_record(0, fields=[Field::new("a", Type::I32, 0), Field::new("b", Type::I32, 4)], values=[Value::I32(1), Value::I32(2)]), record_size=8, iterator created then buffer modified - expected_results: iterator still references old data (due to ArcSwap semantics)
+test_TableBuffer_iter_records_05_end
+test_zero_copy_end
+test_plan_end
