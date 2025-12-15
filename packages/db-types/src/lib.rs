@@ -58,14 +58,6 @@ pub mod field;
 pub mod table;
 pub mod types;
 
-// Re-export commonly used types
-pub use field::{
-    calculate_record_size, calculate_record_size_checked, Field, FieldBuilder, FieldError,
-    FieldListBuilder,
-};
-pub use types::align_offset;
-pub use types::Type;
-
 #[cfg(test)]
 mod tests {
     #[test]
