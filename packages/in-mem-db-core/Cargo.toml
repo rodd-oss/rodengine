@@ -1,0 +1,25 @@
+[package]
+name = "in-mem-db-core"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Core storage engine for in-memory relational database"
+repository.workspace = true
+readme.workspace = true
+
+[features]
+default = []
+persist = ["dep:memmap2"]
+
+[dependencies]
+arc-swap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+memmap2 = { workspace = true, optional = true }
+
+[dev-dependencies]
+anyhow.workspace = true

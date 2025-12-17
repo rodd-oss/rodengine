@@ -1,0 +1,25 @@
+[package]
+name = "in-mem-db-runtime"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Tick-based runtime and procedure execution system"
+repository.workspace = true
+readme.workspace = true
+
+[features]
+default = ["parallel"]
+parallel = ["dep:rayon", "dep:tokio"]
+
+[dependencies]
+in-mem-db-core = { path = "../in-mem-db-core", version = "0.1.0" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+anyhow = { workspace = true }
+
+rayon = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+
+[dev-dependencies]

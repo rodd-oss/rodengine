@@ -1,0 +1,25 @@
+[package]
+name = "db-tool"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "CLI tool for schema management and data inspection"
+repository.workspace = true
+readme.workspace = true
+
+[[bin]]
+name = "db-tool"
+path = "src/main.rs"
+
+[features]
+default = ["persist"]
+persist = ["in-mem-db-core/persist"]
+
+[dependencies]
+in-mem-db-core = { path = "../../packages/in-mem-db-core", version = "0.1.0" }
+clap = { workspace = true }
+tracing = { workspace = true }
+anyhow = { workspace = true }
+
+[dev-dependencies]

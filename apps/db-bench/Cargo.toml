@@ -1,0 +1,22 @@
+[package]
+name = "db-bench"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Performance benchmarks for in-memory database"
+repository.workspace = true
+readme.workspace = true
+
+[[bin]]
+name = "db-bench"
+path = "src/main.rs"
+
+[dependencies]
+in-mem-db-core = { path = "../../packages/in-mem-db-core", version = "0.1.0" }
+in-mem-db-runtime = { path = "../../packages/in-mem-db-runtime", version = "0.1.0", features = ["parallel"] }
+criterion = { workspace = true }
+tracing = { workspace = true }
+anyhow = { workspace = true }
+
+[dev-dependencies]

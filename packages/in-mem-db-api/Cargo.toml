@@ -1,0 +1,25 @@
+[package]
+name = "in-mem-db-api"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "REST API server for in-memory database"
+repository.workspace = true
+readme.workspace = true
+
+[features]
+default = ["hyper", "matchit"]
+
+[dependencies]
+in-mem-db-core = { path = "../in-mem-db-core", version = "0.1.0" }
+in-mem-db-runtime = { path = "../in-mem-db-runtime", version = "0.1.0", features = ["parallel"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+anyhow = { workspace = true }
+
+hyper = { workspace = true, optional = true }
+matchit = { workspace = true, optional = true }
+
+[dev-dependencies]

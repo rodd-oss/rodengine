@@ -1,0 +1,1 @@
+//! Criterion benchmarks for CRUD operations.
