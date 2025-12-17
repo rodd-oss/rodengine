@@ -1,1 +1,0 @@
-//! JSON schema serialization.

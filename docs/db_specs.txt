@@ -1,6 +1,4 @@
-We want to build relational in memory database. It would be used for online games.
-
-Without any SQL support, but with rest API for
+We are building relational in memory database without any SQL support, but with rest API for
 - creating / deleting tables by name
 - creating / deleting table fields by name and type from predefined type list
 - creating / deleting relations
@@ -24,3 +22,5 @@ Requirements_start
 - procedure should be able to itter parallel on all available CPU cores on the data in one table to maximize cache hit
 - each procedure should run transactionaly and commit at the end
 Requirements_end
+
+Based on specifications above write the most dry but informative PRD that will be used for ai agent. Skip marketing, only precision.

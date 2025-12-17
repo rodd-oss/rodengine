@@ -1,14 +1,4 @@
 [workspace]
-members = [
-    "apps/db-server",
-    "apps/db-cli", 
-    "apps/db-test-runner",
-    "packages/db-core",
-    "packages/db-runtime",
-    "packages/db-api",
-    "packages/db-persistence",
-    "packages/db-types"
-]
 
 resolver = "2"
 
