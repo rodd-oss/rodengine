@@ -51,6 +51,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         initial_table_capacity: 1024,   // Default value
         data_dir: PathBuf::from(&args.data_dir),
         procedure_thread_pool_size: 0, // Default value (num_cpus)
+        max_buffer_size: usize::MAX,   // Default value (unlimited)
     });
 
     // Create persistence manager

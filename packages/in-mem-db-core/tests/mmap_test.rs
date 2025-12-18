@@ -40,7 +40,8 @@ fn test_mmap_persistence() {
         Field::new("active".to_string(), "bool".to_string(), bool_layout, 8),
     ];
 
-    db.create_table("users".to_string(), fields, None).unwrap();
+    db.create_table("users".to_string(), fields, None, usize::MAX)
+        .unwrap();
 
     // Add some data
     {

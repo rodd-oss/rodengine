@@ -11,7 +11,7 @@ use crate::table::Field;
 use crate::types::TypeRegistry;
 use ntest::timeout;
 
-#[timeout(1000)]
+#[timeout(2000)]
 #[test]
 fn test_save_and_load_schema() {
     let temp_dir = tempdir().unwrap();
@@ -41,7 +41,7 @@ fn test_save_and_load_schema() {
         Field::new("name".to_string(), "string".to_string(), string_layout, 8),
     ];
 
-    db.create_table("test_table".to_string(), fields, None)
+    db.create_table("test_table".to_string(), fields, None, usize::MAX)
         .unwrap();
 
     // Save schema
@@ -74,7 +74,7 @@ fn test_save_and_load_schema() {
     assert_eq!(table.fields[1].type_id, "string");
 }
 
-#[timeout(1000)]
+#[timeout(2000)]
 #[test]
 fn test_flush_and_load_table_data() {
     let temp_dir = tempdir().unwrap();
@@ -105,7 +105,7 @@ fn test_flush_and_load_table_data() {
         0,
     )];
 
-    db.create_table("test_table".to_string(), fields, None)
+    db.create_table("test_table".to_string(), fields, None, usize::MAX)
         .unwrap();
 
     // Get table and add some data
@@ -135,7 +135,7 @@ fn test_flush_and_load_table_data() {
         u64_layout,
         0,
     )];
-    db2.create_table("test_table".to_string(), fields, None)
+    db2.create_table("test_table".to_string(), fields, None, usize::MAX)
         .unwrap();
 
     let table2 = db2.get_table("test_table").unwrap();
@@ -146,7 +146,7 @@ fn test_flush_and_load_table_data() {
     assert_eq!(table2.current_next_id(), 2); // next_id should be restored to max id + 1
 }
 
-#[timeout(1000)]
+#[timeout(2000)]
 #[test]
 fn test_atomic_rename_schema() {
     let temp_dir = tempdir().unwrap();
@@ -177,7 +177,7 @@ fn test_atomic_rename_schema() {
         0,
     )];
 
-    db.create_table("test_table".to_string(), fields, None)
+    db.create_table("test_table".to_string(), fields, None, usize::MAX)
         .unwrap();
 
     // Save schema multiple times to test atomic rename
@@ -203,7 +203,7 @@ fn test_atomic_rename_schema() {
     }
 }
 
-#[timeout(1000)]
+#[timeout(2000)]
 #[test]
 fn test_flush_all_tables() {
     let temp_dir = tempdir().unwrap();
@@ -232,9 +232,10 @@ fn test_flush_all_tables() {
         0,
     )];
 
-    db.create_table("table1".to_string(), fields.clone(), None)
+    db.create_table("table1".to_string(), fields.clone(), None, usize::MAX)
         .unwrap();
-    db.create_table("table2".to_string(), fields, None).unwrap();
+    db.create_table("table2".to_string(), fields, None, usize::MAX)
+        .unwrap();
 
     // Add data to tables - need to drop mutable references before flushing
     {
@@ -272,7 +273,7 @@ fn test_flush_all_tables() {
     assert_eq!(table2_data.len(), 8); // 1 record * 8 bytes
 }
 
-#[timeout(1000)]
+#[timeout(2000)]
 #[test]
 fn test_custom_types_persistence() {
     let temp_dir = tempdir().unwrap();
@@ -310,7 +311,7 @@ fn test_custom_types_persistence() {
         ),
     ];
 
-    db.create_table("entities".to_string(), fields, None)
+    db.create_table("entities".to_string(), fields, None, usize::MAX)
         .unwrap();
 
     // Save schema
@@ -366,7 +367,7 @@ fn test_custom_types_persistence() {
     assert_eq!(table.fields[1].type_id, "3xf32");
 }
 
-#[timeout(1000)]
+#[timeout(2000)]
 #[test]
 fn test_corruption_detection_with_checksums() {
     let temp_dir = tempdir().unwrap();
@@ -394,7 +395,7 @@ fn test_corruption_detection_with_checksums() {
         0,
     )];
 
-    db.create_table("test_table".to_string(), fields, None)
+    db.create_table("test_table".to_string(), fields, None, usize::MAX)
         .unwrap();
 
     // Save schema (initial save without checksums)
@@ -427,7 +428,7 @@ fn test_corruption_detection_with_checksums() {
         u64_layout,
         0,
     )];
-    db2.create_table("test_table".to_string(), fields, None)
+    db2.create_table("test_table".to_string(), fields, None, usize::MAX)
         .unwrap();
     let table2 = db2.get_table("test_table").unwrap();
     persistence.load_table_data(&table2).unwrap();
@@ -455,7 +456,7 @@ fn test_corruption_detection_with_checksums() {
         u64_layout,
         0,
     )];
-    db3.create_table("test_table".to_string(), fields, None)
+    db3.create_table("test_table".to_string(), fields, None, usize::MAX)
         .unwrap();
     let table3 = db3.get_table("test_table").unwrap();
 

@@ -90,6 +90,8 @@ pub struct PersistenceManager {
     flush_interval_ticks: u32,
     /// Current tick count
     tick_count: AtomicU64,
+    /// Maximum buffer size per table in bytes
+    max_buffer_size: usize,
 }
 
 impl PersistenceManager {
@@ -99,6 +101,7 @@ impl PersistenceManager {
             data_dir: config.data_dir.clone(),
             flush_interval_ticks: config.persistence_interval_ticks,
             tick_count: AtomicU64::new(0),
+            max_buffer_size: config.max_buffer_size,
         }
     }
 
@@ -202,7 +205,7 @@ impl PersistenceManager {
         // Create tables
         for (table_name, table_schema) in &schema.tables {
             let fields = self.build_fields(&db, table_schema)?;
-            db.create_table(table_name.clone(), fields, None)?;
+            db.create_table(table_name.clone(), fields, None, self.max_buffer_size)?;
 
             // Add relations
             let mut table_ref = db.get_table_mut(table_name)?;
@@ -470,7 +473,16 @@ impl PersistenceManager {
         }
 
         // Store data and update next_id
-        table.buffer.store(data.to_vec());
+        table.buffer.store(data.to_vec()).map_err(|e| match e {
+            DbError::MemoryLimitExceeded {
+                requested, limit, ..
+            } => DbError::MemoryLimitExceeded {
+                requested,
+                limit,
+                table: table.name.clone(),
+            },
+            _ => e,
+        })?;
         table
             .next_id
             .store(max_id + 1, std::sync::atomic::Ordering::SeqCst);

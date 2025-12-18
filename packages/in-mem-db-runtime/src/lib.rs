@@ -530,7 +530,7 @@ impl Runtime {
                 tracing::info!("Creating table {} with {} fields", name, fields.len());
                 let result = self
                     .database
-                    .create_table(name.clone(), fields, None)
+                    .create_table(name.clone(), fields, None, self.config.max_buffer_size)
                     .and_then(|()| {
                         let table = self.database.get_table(&name)?;
                         Ok(serde_json::json!({

@@ -102,6 +102,7 @@ impl Table {
         name: String,
         fields: Vec<Field>,
         initial_capacity: Option<usize>,
+        max_buffer_size: usize,
     ) -> Result<Self, DbError> {
         // Validate fields have unique names
         let mut seen_names = std::collections::HashSet::new();
@@ -132,10 +133,19 @@ impl Table {
                     operation: "initial buffer allocation",
                 })?;
 
+        // Enforce max buffer size limit
+        if capacity_bytes > max_buffer_size {
+            return Err(DbError::MemoryLimitExceeded {
+                requested: capacity_bytes,
+                limit: max_buffer_size,
+                table: name.clone(),
+            });
+        }
+
         Ok(Self {
             name,
             record_size,
-            buffer: AtomicBuffer::new(capacity_bytes, record_size),
+            buffer: AtomicBuffer::new(capacity_bytes, record_size, max_buffer_size),
             fields,
             relations: Vec::new(),
             next_id: AtomicU64::new(1), // Start IDs at 1
@@ -623,21 +633,30 @@ impl Table {
             });
         }
 
-        // Clone current buffer for modification
-        let mut new_buffer = self.buffer.load_full();
+        // Ensure capacity for new record (enforces memory limits)
+        let current_len = self.buffer.len();
+        let required_capacity = current_len + self.record_size;
+        self.buffer
+            .ensure_capacity(required_capacity)
+            .map_err(|e| match e {
+                DbError::MemoryLimitExceeded {
+                    requested, limit, ..
+                } => DbError::MemoryLimitExceeded {
+                    requested,
+                    limit,
+                    table: self.name.clone(),
+                },
+                _ => e,
+            })?;
 
-        // Ensure capacity for new record
-        let required_capacity = new_buffer.len() + self.record_size;
-        if required_capacity > new_buffer.capacity() {
-            // This will trigger a reallocation and copy
-            new_buffer.reserve(self.record_size);
-        }
+        // Clone current buffer for modification (after potential growth)
+        let mut new_buffer = self.buffer.load_full();
 
         // Append new record data
         new_buffer.extend_from_slice(data);
 
         // Atomically swap buffers (last-writer-wins semantics)
-        self.buffer.store(new_buffer);
+        self.buffer.store(new_buffer)?;
 
         // Return assigned ID (atomic increment)
         Ok(self.next_id())
@@ -737,7 +756,16 @@ impl Table {
         slice.copy_from_slice(data);
 
         // Atomically swap buffers (last-writer-wins semantics)
-        self.buffer.store(new_buffer);
+        self.buffer.store(new_buffer).map_err(|e| match e {
+            DbError::MemoryLimitExceeded {
+                requested, limit, ..
+            } => DbError::MemoryLimitExceeded {
+                requested,
+                limit,
+                table: self.name.clone(),
+            },
+            _ => e,
+        })?;
 
         Ok(())
     }
@@ -802,7 +830,16 @@ impl Table {
         }
 
         // Atomically swap buffers (last-writer-wins semantics)
-        self.buffer.store(new_buffer);
+        self.buffer.store(new_buffer).map_err(|e| match e {
+            DbError::MemoryLimitExceeded {
+                requested, limit, ..
+            } => DbError::MemoryLimitExceeded {
+                requested,
+                limit,
+                table: self.name.clone(),
+            },
+            _ => e,
+        })?;
 
         Ok(())
     }
@@ -862,7 +899,16 @@ impl Table {
         new_buffer[field_offset] = 1;
 
         // Atomically swap buffers (last-writer-wins semantics)
-        self.buffer.store(new_buffer);
+        self.buffer.store(new_buffer).map_err(|e| match e {
+            DbError::MemoryLimitExceeded {
+                requested, limit, ..
+            } => DbError::MemoryLimitExceeded {
+                requested,
+                limit,
+                table: self.name.clone(),
+            },
+            _ => e,
+        })?;
 
         Ok(())
     }
@@ -920,7 +966,16 @@ impl Table {
 
         // Only swap if records were actually removed
         if records_removed > 0 {
-            self.buffer.store(new_buffer);
+            self.buffer.store(new_buffer).map_err(|e| match e {
+                DbError::MemoryLimitExceeded {
+                    requested, limit, ..
+                } => DbError::MemoryLimitExceeded {
+                    requested,
+                    limit,
+                    table: self.name.clone(),
+                },
+                _ => e,
+            })?;
         }
 
         Ok(records_removed)
@@ -1233,7 +1288,7 @@ mod tests {
     #[test]
     fn test_table_create() {
         let fields = create_test_fields();
-        let table = Table::create("test_table".to_string(), fields, Some(100)).unwrap();
+        let table = Table::create("test_table".to_string(), fields, Some(100), usize::MAX).unwrap();
 
         assert_eq!(table.name, "test_table");
         assert_eq!(table.record_size, 269); // 0-7: id, 8-267: name (260 bytes), 268: active
@@ -1249,7 +1304,7 @@ mod tests {
     #[test]
     fn test_field_offset() {
         let fields = create_test_fields();
-        let table = Table::create("test_table".to_string(), fields, Some(100)).unwrap();
+        let table = Table::create("test_table".to_string(), fields, Some(100), usize::MAX).unwrap();
 
         assert_eq!(table.field_offset("id").unwrap(), 0);
         assert_eq!(table.field_offset("name").unwrap(), 8);
@@ -1262,7 +1317,7 @@ mod tests {
     #[test]
     fn test_next_id() {
         let fields = create_test_fields();
-        let table = Table::create("test_table".to_string(), fields, Some(100)).unwrap();
+        let table = Table::create("test_table".to_string(), fields, Some(100), usize::MAX).unwrap();
 
         assert_eq!(table.next_id(), 1);
         assert_eq!(table.next_id(), 2);
@@ -1274,7 +1329,7 @@ mod tests {
     #[test]
     fn test_record_offset() {
         let fields = create_test_fields();
-        let table = Table::create("test_table".to_string(), fields, Some(100)).unwrap();
+        let table = Table::create("test_table".to_string(), fields, Some(100), usize::MAX).unwrap();
 
         assert_eq!(table.record_offset(0), 0);
         assert_eq!(table.record_offset(1), 269);
@@ -1312,7 +1367,7 @@ mod tests {
             Field::new("id".to_string(), "u64".to_string(), u64_layout, 8), // Duplicate!
         ];
 
-        let result = Table::create("test_table".to_string(), fields, Some(100));
+        let result = Table::create("test_table".to_string(), fields, Some(100), usize::MAX);
         assert!(result.is_err());
         match result {
             Err(DbError::FieldAlreadyExists { table, field }) => {
@@ -1358,7 +1413,7 @@ mod tests {
             96,
         )];
 
-        let result = Table::create("test_table".to_string(), fields, Some(100));
+        let result = Table::create("test_table".to_string(), fields, Some(100), usize::MAX);
         assert!(result.is_ok());
         let table = result.unwrap();
         assert_eq!(table.record_size, 104); // 96 + 8
@@ -1368,7 +1423,8 @@ mod tests {
     #[test]
     fn test_relations() {
         let fields = create_test_fields();
-        let mut table = Table::create("test_table".to_string(), fields, Some(100)).unwrap();
+        let mut table =
+            Table::create("test_table".to_string(), fields, Some(100), usize::MAX).unwrap();
 
         let relation = Relation {
             to_table: "other_table".to_string(),
@@ -1389,7 +1445,7 @@ mod tests {
     #[test]
     fn test_get_field() {
         let fields = create_test_fields();
-        let table = Table::create("test_table".to_string(), fields, Some(100)).unwrap();
+        let table = Table::create("test_table".to_string(), fields, Some(100), usize::MAX).unwrap();
 
         assert!(table.get_field("id").is_some());
         assert!(table.get_field("name").is_some());
@@ -1401,7 +1457,8 @@ mod tests {
     #[test]
     fn test_add_field() {
         let fields = create_test_fields();
-        let mut table = Table::create("test_table".to_string(), fields, Some(100)).unwrap();
+        let mut table =
+            Table::create("test_table".to_string(), fields, Some(100), usize::MAX).unwrap();
 
         // Create a new field layout
         let i32_layout = unsafe {
@@ -1463,7 +1520,8 @@ mod tests {
     #[test]
     fn test_remove_field() {
         let fields = create_test_fields();
-        let mut table = Table::create("test_table".to_string(), fields, Some(100)).unwrap();
+        let mut table =
+            Table::create("test_table".to_string(), fields, Some(100), usize::MAX).unwrap();
 
         // Remove the "name" field
         assert!(table.remove_field("name").is_ok());
@@ -1554,7 +1612,8 @@ mod tests {
             0,
         )];
 
-        let mut table = Table::create("test_table".to_string(), fields, Some(100)).unwrap();
+        let mut table =
+            Table::create("test_table".to_string(), fields, Some(100), usize::MAX).unwrap();
 
         // Add u64 field - should be aligned to 8 bytes
         let offset = table
@@ -1570,7 +1629,8 @@ mod tests {
     #[test]
     fn test_field_type_validation() {
         let fields = create_test_fields();
-        let mut table = Table::create("test_table".to_string(), fields, Some(100)).unwrap();
+        let mut table =
+            Table::create("test_table".to_string(), fields, Some(100), usize::MAX).unwrap();
 
         // Create layout with type_id "i32"
         let i32_layout = unsafe {
@@ -1611,7 +1671,7 @@ mod tests {
     #[test]
     fn test_read_record_raw() {
         let fields = create_test_fields();
-        let table = Table::create("test_table".to_string(), fields, Some(100)).unwrap();
+        let table = Table::create("test_table".to_string(), fields, Some(100), usize::MAX).unwrap();
 
         // Buffer is empty initially
         assert!(table.read_record_raw(0).is_err());
@@ -1624,7 +1684,7 @@ mod tests {
     #[test]
     fn test_read_field_raw() {
         let fields = create_test_fields();
-        let table = Table::create("test_table".to_string(), fields, Some(100)).unwrap();
+        let table = Table::create("test_table".to_string(), fields, Some(100), usize::MAX).unwrap();
 
         // Buffer is empty, but we can still test field lookup
         assert!(table.read_field_raw(0, "id").is_err());
@@ -1638,7 +1698,9 @@ mod tests {
         use std::thread;
 
         let fields = create_test_fields();
-        let table = Arc::new(Table::create("test_table".to_string(), fields, Some(100)).unwrap());
+        let table = Arc::new(
+            Table::create("test_table".to_string(), fields, Some(100), usize::MAX).unwrap(),
+        );
 
         // Spawn multiple threads to test concurrent access
         let mut handles = vec![];
@@ -1671,7 +1733,9 @@ mod tests {
         use std::thread;
 
         let fields = create_test_fields();
-        let table = Arc::new(Table::create("test_table".to_string(), fields, Some(100)).unwrap());
+        let table = Arc::new(
+            Table::create("test_table".to_string(), fields, Some(100), usize::MAX).unwrap(),
+        );
 
         // Store some data
         {
@@ -1680,7 +1744,7 @@ mod tests {
             for (i, item) in data.iter_mut().enumerate() {
                 *item = (i % 256) as u8;
             }
-            table.buffer.store(data);
+            table.buffer.store(data).unwrap();
         }
 
         let mut handles = vec![];
@@ -1722,7 +1786,7 @@ mod tests {
     #[test]
     fn test_create_record() {
         let fields = create_test_fields();
-        let table = Table::create("test_table".to_string(), fields, Some(100)).unwrap();
+        let table = Table::create("test_table".to_string(), fields, Some(100), usize::MAX).unwrap();
 
         // Create test record data
         let mut data = vec![0u8; table.record_size];
@@ -1757,7 +1821,7 @@ mod tests {
     #[test]
     fn test_update_record() {
         let fields = create_test_fields();
-        let table = Table::create("test_table".to_string(), fields, Some(100)).unwrap();
+        let table = Table::create("test_table".to_string(), fields, Some(100), usize::MAX).unwrap();
 
         // Create initial record
         let mut data = vec![0u8; table.record_size];
@@ -1796,7 +1860,7 @@ mod tests {
     #[test]
     fn test_partial_update() {
         let fields = create_test_fields();
-        let table = Table::create("test_table".to_string(), fields, Some(100)).unwrap();
+        let table = Table::create("test_table".to_string(), fields, Some(100), usize::MAX).unwrap();
 
         // Create initial record
         let mut data = vec![0u8; table.record_size];
@@ -1839,7 +1903,7 @@ mod tests {
     #[test]
     fn test_delete_and_compact_records() {
         let fields = create_test_fields();
-        let table = Table::create("test_table".to_string(), fields, Some(100)).unwrap();
+        let table = Table::create("test_table".to_string(), fields, Some(100), usize::MAX).unwrap();
 
         // Create 3 records
         for i in 0..3 {
@@ -1891,7 +1955,9 @@ mod tests {
         use std::thread;
 
         let fields = create_test_fields();
-        let table = Arc::new(Table::create("test_table".to_string(), fields, Some(1000)).unwrap());
+        let table = Arc::new(
+            Table::create("test_table".to_string(), fields, Some(1000), usize::MAX).unwrap(),
+        );
 
         // Create initial record
         let mut data = vec![0u8; table.record_size];
@@ -1942,7 +2008,7 @@ mod tests {
     #[test]
     fn test_failed_write_discards_buffer() {
         let fields = create_test_fields();
-        let table = Table::create("test_table".to_string(), fields, Some(100)).unwrap();
+        let table = Table::create("test_table".to_string(), fields, Some(100), usize::MAX).unwrap();
 
         // Create initial record
         let mut data = vec![0u8; table.record_size];
@@ -1979,11 +2045,11 @@ mod tests {
     #[timeout(1000)]
     #[test]
     fn test_load_full_clones_buffer() {
-        let buffer = AtomicBuffer::new(1024, 64);
+        let buffer = AtomicBuffer::new(1024, 64, usize::MAX);
 
         // Store initial data
         let initial_data = vec![1u8, 2, 3, 4, 5];
-        buffer.store(initial_data.clone());
+        buffer.store(initial_data.clone()).unwrap();
 
         // Load for reading
         let read_arc = buffer.load();
@@ -2002,7 +2068,7 @@ mod tests {
         assert_eq!(read_arc2.as_slice(), &initial_data);
 
         // Store modified clone
-        buffer.store(cloned);
+        buffer.store(cloned).unwrap();
 
         // Now buffer is updated
         let read_arc3 = buffer.load();
@@ -2013,7 +2079,7 @@ mod tests {
     #[test]
     fn test_create_record_from_values() {
         let fields = create_test_fields();
-        let table = Table::create("test_table".to_string(), fields, Some(100)).unwrap();
+        let table = Table::create("test_table".to_string(), fields, Some(100), usize::MAX).unwrap();
 
         // Create field values
         let id_bytes = 1u64.to_le_bytes();
@@ -2061,7 +2127,7 @@ mod tests {
     #[test]
     fn test_read_record() {
         let fields = create_test_fields();
-        let table = Table::create("test_table".to_string(), fields, Some(100)).unwrap();
+        let table = Table::create("test_table".to_string(), fields, Some(100), usize::MAX).unwrap();
 
         // Create a record
         let mut data = vec![0u8; table.record_size];

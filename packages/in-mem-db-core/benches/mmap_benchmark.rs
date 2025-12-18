@@ -33,7 +33,7 @@ fn create_test_database(data_dir: PathBuf, record_count: usize) -> (Database, Pe
         Field::new("value".to_string(), "u64".to_string(), u64_layout, 8),
     ];
 
-    db.create_table("test_table".to_string(), fields, None)
+    db.create_table("test_table".to_string(), fields, None, usize::MAX)
         .unwrap();
 
     // Add data
@@ -113,7 +113,7 @@ fn bench_load_table_data_traditional(c: &mut Criterion) {
         Field::new("id".to_string(), "u64".to_string(), u64_layout.clone(), 0),
         Field::new("value".to_string(), "u64".to_string(), u64_layout, 8),
     ];
-    db2.create_table("test_table".to_string(), fields, None)
+    db2.create_table("test_table".to_string(), fields, None, usize::MAX)
         .unwrap();
 
     let table2 = db2.get_table("test_table").unwrap();
@@ -155,7 +155,7 @@ fn bench_load_table_data_mmap(c: &mut Criterion) {
         Field::new("id".to_string(), "u64".to_string(), u64_layout.clone(), 0),
         Field::new("value".to_string(), "u64".to_string(), u64_layout, 8),
     ];
-    db2.create_table("test_table".to_string(), fields, None)
+    db2.create_table("test_table".to_string(), fields, None, usize::MAX)
         .unwrap();
 
     let table2 = db2.get_table("test_table").unwrap();

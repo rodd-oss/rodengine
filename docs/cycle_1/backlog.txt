@@ -284,7 +284,7 @@ feature_failure_modes_start
 [x] task_fm_1: Procedure panic recovery without data corruption
 [x] task_fm_2: Add [#timeout] for each test
 [x] task_fm_3: Schema corruption detection and graceful shutdown
-[] task_fm_4: Memory pressure handling with buffer growth limits
+[x] task_fm_4: Memory pressure handling with buffer growth limits
 [] task_fm_5: Network timeout handling for API requests
 [] task_fm_6: Disk full persistence error handling
 feature_failure_modes_end
@@ -334,11 +334,11 @@ feature_transaction_concurrency_fix_start
 [] task_tc_5: Test concurrent transaction scenarios with race conditions
 feature_transaction_concurrency_fix_end
 feature_buffer_growth_race_fix_start
-[] task_bg_1: Fix AtomicBuffer.grow() race condition with compare-and-swap
+[x] task_bg_1: Fix AtomicBuffer.grow() race condition with compare-and-swap
 [] task_bg_2: Implement ArcSwap.rcu pattern for atomic read-copy-update
-[] task_bg_3: Add capacity growth limits to prevent memory exhaustion
+[x] task_bg_3: Add capacity growth limits to prevent memory exhaustion
 [] task_bg_4: Test concurrent buffer growth with multiple writers
-[] task_bg_5: Add metrics for buffer growth events and contention
+[x] task_bg_5: Add metrics for buffer growth events and contention
 feature_buffer_growth_race_fix_end
 feature_parallel_execution_consistency_start
 [] task_pe_1: Align sequential procedure timeout handling with parallel behavior (send timeout errors through response channels, ensure consistent error handling)

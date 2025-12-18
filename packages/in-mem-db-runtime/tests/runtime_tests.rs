@@ -49,7 +49,7 @@ fn test_runtime_basic_lifecycle() {
         0,
     )];
 
-    db.create_table("rate_test".to_string(), fields, None)
+    db.create_table("rate_test".to_string(), fields, None, usize::MAX)
         .unwrap();
 
     // Flood with requests
@@ -124,7 +124,7 @@ fn test_runtime_procedure_execution() {
         0,
     )];
 
-    db.create_table("proc_test".to_string(), fields, None)
+    db.create_table("proc_test".to_string(), fields, None, usize::MAX)
         .unwrap();
 
     // Register a simple procedure that does nothing (for testing RPC handling)
@@ -204,7 +204,7 @@ fn test_procedure_panic_recovery() {
         0,
     )];
 
-    db.create_table("panic_test".to_string(), fields, None)
+    db.create_table("panic_test".to_string(), fields, None, usize::MAX)
         .unwrap();
 
     // Register a procedure that panics when params["panic"] == true

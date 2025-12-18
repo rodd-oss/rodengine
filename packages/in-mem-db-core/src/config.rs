@@ -17,6 +17,8 @@ pub struct DbConfig {
     pub data_dir: PathBuf,
     /// Procedure thread pool size (0 = num_cpus)
     pub procedure_thread_pool_size: usize,
+    /// Maximum buffer size per table in bytes (default: unlimited)
+    pub max_buffer_size: usize,
 }
 
 impl Default for DbConfig {
@@ -28,6 +30,7 @@ impl Default for DbConfig {
             initial_table_capacity: 1024,
             data_dir: PathBuf::from("./data"),
             procedure_thread_pool_size: 0,
+            max_buffer_size: usize::MAX,
         }
     }
 }

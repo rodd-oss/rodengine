@@ -43,7 +43,8 @@ fn test_basic_crud_smoke() {
         Field::new("active".to_string(), "bool".to_string(), bool_layout, 268), // 8 + 260
     ];
 
-    db.create_table("users".to_string(), fields, None).unwrap();
+    db.create_table("users".to_string(), fields, None, usize::MAX)
+        .unwrap();
 
     // Create records
     let table = db.get_table_mut("users").unwrap();
@@ -164,7 +165,7 @@ fn test_concurrent_operations_smoke() {
         0,
     )];
 
-    db.create_table("counters".to_string(), fields, None)
+    db.create_table("counters".to_string(), fields, None, usize::MAX)
         .unwrap();
 
     // Spawn multiple writer threads
@@ -272,7 +273,7 @@ fn test_persistence_recovery_smoke() {
             ),
         ];
 
-        db.create_table("entities".to_string(), fields, None)
+        db.create_table("entities".to_string(), fields, None, usize::MAX)
             .unwrap();
 
         // Add data
@@ -385,11 +386,11 @@ fn test_error_handling_smoke() {
         0,
     )];
 
-    db.create_table("test".to_string(), fields.clone(), None)
+    db.create_table("test".to_string(), fields.clone(), None, usize::MAX)
         .unwrap();
 
     // Try to create table with same name
-    let result = db.create_table("test".to_string(), fields, None);
+    let result = db.create_table("test".to_string(), fields, None, usize::MAX);
     assert!(result.is_err(), "Should fail to create duplicate table");
 
     // Test 2: Access non-existent table should fail
@@ -471,7 +472,8 @@ fn test_memory_cleanup_smoke() {
             0,
         )];
 
-        db.create_table(table_name.clone(), fields, None).unwrap();
+        db.create_table(table_name.clone(), fields, None, usize::MAX)
+            .unwrap();
 
         // Add some data
         let table = db.get_table_mut(&table_name).unwrap();

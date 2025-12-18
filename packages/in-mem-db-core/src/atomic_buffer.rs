@@ -6,6 +6,7 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
+use crate::error::DbError;
 use arc_swap::ArcSwap;
 
 #[cfg(feature = "persist")]
@@ -83,8 +84,14 @@ pub struct AtomicBuffer {
     inner: ArcSwap<BufferStorage>,
     /// Current capacity of the buffer in bytes
     capacity: AtomicUsize,
+    /// Maximum allowed capacity in bytes (immutable after creation)
+    max_capacity: AtomicUsize,
     /// Record size in bytes for offset calculations
     record_size: usize,
+    /// Number of growth events (metrics)
+    growth_count: AtomicUsize,
+    /// Total bytes grown across all growth events (metrics)
+    growth_bytes: AtomicUsize,
 }
 
 impl AtomicBuffer {
@@ -93,18 +100,28 @@ impl AtomicBuffer {
     /// # Arguments
     /// * `initial_capacity` - Initial buffer capacity in bytes
     /// * `record_size` - Size of each record in bytes
+    /// * `max_capacity` - Maximum allowed capacity in bytes (default: usize::MAX)
     ///
     /// # Panics
     /// Panics if `initial_capacity` is 0 or if `record_size` is 0.
-    pub fn new(initial_capacity: usize, record_size: usize) -> Self {
+    pub fn new(initial_capacity: usize, record_size: usize, max_capacity: usize) -> Self {
         assert!(initial_capacity > 0, "initial_capacity must be > 0");
         assert!(record_size > 0, "record_size must be > 0");
+        assert!(
+            initial_capacity <= max_capacity,
+            "initial_capacity ({}) exceeds max_capacity ({})",
+            initial_capacity,
+            max_capacity
+        );
 
         let buffer = BufferStorage::Memory(Vec::with_capacity(initial_capacity));
         Self {
             inner: ArcSwap::new(Arc::new(buffer)),
             capacity: AtomicUsize::new(initial_capacity),
+            max_capacity: AtomicUsize::new(max_capacity),
             record_size,
+            growth_count: AtomicUsize::new(0),
+            growth_bytes: AtomicUsize::new(0),
         }
     }
 
@@ -130,7 +147,11 @@ impl AtomicBuffer {
     /// - One allocation for the cloned buffer
     pub fn load_full(&self) -> Vec<u8> {
         let current = self.inner.load_full();
-        current.as_slice().to_vec()
+        match &*current {
+            BufferStorage::Memory(vec) => vec.clone(),
+            #[cfg(feature = "persist")]
+            BufferStorage::Mmap(mmap) => mmap.as_ref().to_vec(),
+        }
     }
 
     /// Atomically swaps the buffer with a new one.
@@ -138,13 +159,25 @@ impl AtomicBuffer {
     /// # Arguments
     /// * `new_buffer` - New buffer to publish
     ///
+    /// # Returns
+    /// `Result<(), DbError>` indicating success or memory limit exceeded.
+    ///
     /// # Safety
     /// Caller must ensure `new_buffer` is properly initialized and aligned.
-    pub fn store(&self, new_buffer: Vec<u8>) {
+    pub fn store(&self, new_buffer: Vec<u8>) -> Result<(), DbError> {
         let new_capacity = new_buffer.capacity();
+        let max_capacity = self.max_capacity.load(Ordering::Relaxed);
+        if new_capacity > max_capacity {
+            return Err(DbError::MemoryLimitExceeded {
+                requested: new_capacity,
+                limit: max_capacity,
+                table: String::new(), // Table name unknown at this level
+            });
+        }
         self.inner
             .store(Arc::new(BufferStorage::Memory(new_buffer)));
         self.capacity.store(new_capacity, Ordering::Release);
+        Ok(())
     }
 
     /// Atomically swaps the buffer with a memory-mapped file.
@@ -181,35 +214,101 @@ impl AtomicBuffer {
     /// Grows the buffer capacity, preserving existing data.
     ///
     /// Creates a new buffer with doubled capacity, copies existing data,
-    /// and atomically swaps it in.
+    /// and atomically swaps it in. Uses CAS loop to ensure only one thread
+    /// performs growth at a time.
     ///
     /// # Arguments
     /// * `required_capacity` - Minimum capacity needed
     ///
     /// # Returns
-    /// `true` if growth occurred, `false` if current capacity is sufficient.
-    pub fn grow(&self, required_capacity: usize) -> bool {
-        let current_capacity = self.capacity.load(Ordering::Acquire);
+    /// `Ok(true)` if growth occurred, `Ok(false)` if current capacity is sufficient,
+    /// `Err(DbError::MemoryLimitExceeded)` if growth would exceed max capacity.
+    pub fn grow(&self, required_capacity: usize) -> Result<bool, DbError> {
+        loop {
+            let current_capacity = self.capacity.load(Ordering::Acquire);
+            if required_capacity <= current_capacity {
+                return Ok(false);
+            }
 
-        if required_capacity <= current_capacity {
-            return false;
+            // Double capacity strategy with overflow protection
+            let new_capacity = current_capacity.saturating_mul(2).max(required_capacity);
+
+            let max_capacity = self.max_capacity.load(Ordering::Relaxed);
+            if new_capacity > max_capacity {
+                return Err(DbError::MemoryLimitExceeded {
+                    requested: new_capacity,
+                    limit: max_capacity,
+                    table: String::new(),
+                });
+            }
+
+            // Attempt to claim growth by CAS
+            match self.capacity.compare_exchange(
+                current_capacity,
+                new_capacity,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => {
+                    // We won the CAS, now allocate and store
+                    // Verify capacity hasn't been changed by another thread
+                    let verified_capacity = self.capacity.load(Ordering::Acquire);
+                    if verified_capacity != new_capacity {
+                        // Another thread changed capacity, retry
+                        continue;
+                    }
+
+                    let current_buffer = self.inner.load_full();
+                    let mut new_buffer = Vec::with_capacity(new_capacity);
+                    new_buffer.extend_from_slice(current_buffer.as_slice());
+
+                    // Store will also validate max_capacity but we already checked
+                    self.store(new_buffer)?;
+
+                    // Update metrics only after successful allocation
+                    self.growth_count.fetch_add(1, Ordering::Relaxed);
+                    self.growth_bytes
+                        .fetch_add(new_capacity - current_capacity, Ordering::Relaxed);
+                    return Ok(true);
+                }
+                Err(_) => {
+                    // CAS failed, another thread changed capacity, retry loop
+                    continue;
+                }
+            }
         }
+    }
 
-        // Double capacity strategy
-        let new_capacity = current_capacity.max(1) * 2;
-        let new_capacity = new_capacity.max(required_capacity);
-
-        let current_buffer = self.inner.load_full();
-        let mut new_buffer = Vec::with_capacity(new_capacity);
-        new_buffer.extend_from_slice(current_buffer.as_slice());
-
-        self.store(new_buffer);
-        true
+    /// Ensures the buffer has at least the required capacity.
+    ///
+    /// # Arguments
+    /// * `required_capacity` - Minimum capacity needed
+    ///
+    /// # Returns
+    /// `Ok(())` if capacity is sufficient or successfully grown,
+    /// `Err(DbError::MemoryLimitExceeded)` if growth would exceed max capacity.
+    pub fn ensure_capacity(&self, required_capacity: usize) -> Result<(), DbError> {
+        self.grow(required_capacity).map(|_| ())
     }
 
     /// Returns the current buffer capacity in bytes.
     pub fn capacity(&self) -> usize {
         self.capacity.load(Ordering::Acquire)
+    }
+
+    /// Returns the maximum allowed buffer capacity in bytes.
+    pub fn max_capacity(&self) -> usize {
+        self.max_capacity.load(Ordering::Relaxed)
+    }
+
+    /// Returns the number of growth events.
+    pub fn growth_count(&self) -> usize {
+        self.growth_count.load(Ordering::Relaxed)
+    }
+
+    /// Returns the total bytes grown across all growth events.
+    pub fn growth_bytes(&self) -> usize {
+        self.growth_bytes.load(Ordering::Relaxed)
     }
 
     /// Returns the record size in bytes.
@@ -347,7 +446,7 @@ mod tests {
     #[test]
     #[timeout(1000)]
     fn test_new_buffer() {
-        let buffer = AtomicBuffer::new(1024, 64);
+        let buffer = AtomicBuffer::new(1024, 64, usize::MAX);
         assert_eq!(buffer.capacity(), 1024);
         assert_eq!(buffer.record_size(), 64);
         assert_eq!(buffer.len(), 0); // Buffer is empty initially
@@ -357,7 +456,7 @@ mod tests {
     #[test]
     #[timeout(1000)]
     fn test_record_offset() {
-        let buffer = AtomicBuffer::new(1024, 64);
+        let buffer = AtomicBuffer::new(1024, 64, usize::MAX);
         assert_eq!(buffer.record_offset(0), 0);
         assert_eq!(buffer.record_offset(1), 64);
         assert_eq!(buffer.record_offset(10), 640);
@@ -366,13 +465,13 @@ mod tests {
     #[test]
     #[timeout(1000)]
     fn test_load_store() {
-        let buffer = AtomicBuffer::new(1024, 64);
+        let buffer = AtomicBuffer::new(1024, 64, usize::MAX);
 
         let loaded = buffer.load();
         assert_eq!(loaded.len(), 0); // Empty initially
 
         let new_data = vec![1u8, 2, 3, 4];
-        buffer.store(new_data.clone());
+        buffer.store(new_data.clone()).unwrap();
 
         let loaded_after = buffer.load();
         assert_eq!(loaded_after.as_slice(), &new_data);
@@ -382,15 +481,15 @@ mod tests {
     #[timeout(1000)]
     #[test]
     fn test_grow() {
-        let buffer = AtomicBuffer::new(1024, 64);
+        let buffer = AtomicBuffer::new(1024, 64, usize::MAX);
         assert_eq!(buffer.capacity(), 1024);
 
         // No growth needed
-        assert!(!buffer.grow(512));
+        assert!(!buffer.grow(512).unwrap());
         assert_eq!(buffer.capacity(), 1024);
 
         // Growth needed
-        assert!(buffer.grow(2048));
+        assert!(buffer.grow(2048).unwrap());
         assert!(buffer.capacity() >= 2048);
 
         // Verify data preserved (buffer is empty)
@@ -402,20 +501,20 @@ mod tests {
     #[timeout(1000)]
     #[should_panic(expected = "initial_capacity must be > 0")]
     fn test_new_zero_capacity() {
-        AtomicBuffer::new(0, 64);
+        AtomicBuffer::new(0, 64, usize::MAX);
     }
 
     #[test]
     #[timeout(1000)]
     #[should_panic(expected = "record_size must be > 0")]
     fn test_new_zero_record_size() {
-        AtomicBuffer::new(1024, 0);
+        AtomicBuffer::new(1024, 0, usize::MAX);
     }
 
     #[timeout(1000)]
     #[test]
     fn test_as_ptr() {
-        let buffer = AtomicBuffer::new(1024, 64);
+        let buffer = AtomicBuffer::new(1024, 64, usize::MAX);
         let (ptr, arc) = buffer.as_ptr();
 
         // Pointer should not be null (buffer is allocated)
@@ -428,11 +527,11 @@ mod tests {
     #[timeout(1000)]
     #[test]
     fn test_ptr_at_offset() {
-        let buffer = AtomicBuffer::new(1024, 64);
+        let buffer = AtomicBuffer::new(1024, 64, usize::MAX);
 
         // Store some data
         let data = vec![1u8, 2, 3, 4, 5];
-        buffer.store(data.clone());
+        buffer.store(data.clone()).unwrap();
 
         // Get pointer at offset 0
         let (ptr0, _arc0) = buffer.ptr_at_offset(0).unwrap();
@@ -454,13 +553,13 @@ mod tests {
     #[timeout(1000)]
     #[test]
     fn test_record_ptr() {
-        let buffer = AtomicBuffer::new(1024, 64);
+        let buffer = AtomicBuffer::new(1024, 64, usize::MAX);
 
         // Store some data
         let mut data = vec![0u8; 128]; // 2 records worth
         data[0] = 1; // First byte of record 0
         data[64] = 2; // First byte of record 1
-        buffer.store(data);
+        buffer.store(data).unwrap();
 
         // Get pointer to record 0
         let (ptr0, _arc0) = buffer.record_ptr(0).unwrap();
@@ -481,11 +580,11 @@ mod tests {
     #[timeout(1000)]
     #[test]
     fn test_slice() {
-        let buffer = AtomicBuffer::new(1024, 64);
+        let buffer = AtomicBuffer::new(1024, 64, usize::MAX);
 
         // Store some data
         let data = vec![1u8, 2, 3, 4, 5, 6, 7, 8];
-        buffer.store(data.clone());
+        buffer.store(data.clone()).unwrap();
 
         // Get slice 2..6
         let (ptr, len, _arc) = buffer.slice(2..6).unwrap();
@@ -503,7 +602,7 @@ mod tests {
     #[timeout(1000)]
     #[test]
     fn test_record_slice() {
-        let buffer = AtomicBuffer::new(1024, 64);
+        let buffer = AtomicBuffer::new(1024, 64, usize::MAX);
 
         // Store 2 records
         let mut data = vec![0u8; 128];
@@ -511,7 +610,7 @@ mod tests {
         data[63] = 2; // Last byte of record 0
         data[64] = 3; // First byte of record 1
         data[127] = 4; // Last byte of record 1
-        buffer.store(data);
+        buffer.store(data).unwrap();
 
         // Get slice for record 0
         let (ptr0, len0, _arc0) = buffer.record_slice(0).unwrap();

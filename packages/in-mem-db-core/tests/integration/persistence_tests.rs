@@ -50,7 +50,7 @@ fn test_async_persistence_atomicity() {
         0,
     )];
 
-    db.create_table("test_table".to_string(), fields, None)
+    db.create_table("test_table".to_string(), fields, None, usize::MAX)
         .unwrap();
 
     // Perform 100 rapid writes
@@ -157,7 +157,7 @@ fn test_schema_persistence_recovery() {
         ),
     ];
 
-    db.create_table("entities".to_string(), fields, None)
+    db.create_table("entities".to_string(), fields, None, usize::MAX)
         .unwrap();
 
     // Create a relation (simulated - need to check if relation API exists)
@@ -288,7 +288,7 @@ fn test_persistence_during_write_burst() {
         0,
     )];
 
-    db.create_table("counters".to_string(), fields, None)
+    db.create_table("counters".to_string(), fields, None, usize::MAX)
         .unwrap();
 
     // Get table reference for writer threads
@@ -402,7 +402,8 @@ fn test_schema_corruption_detection() {
         u64_layout,
         0,
     )];
-    db.create_table("test".to_string(), fields, None).unwrap();
+    db.create_table("test".to_string(), fields, None, usize::MAX)
+        .unwrap();
     persistence.save_schema(&db).unwrap();
 
     let schema_path = temp_dir.path().join("schema.json");

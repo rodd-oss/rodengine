@@ -378,7 +378,19 @@ impl Transaction {
         // 2. Apply only the changes that don't conflict
         // 3. Handle partial failures
 
-        table.buffer.store(staging_buffer.buffer.clone());
+        table
+            .buffer
+            .store(staging_buffer.buffer.clone())
+            .map_err(|e| match e {
+                DbError::MemoryLimitExceeded {
+                    requested, limit, ..
+                } => DbError::MemoryLimitExceeded {
+                    requested,
+                    limit,
+                    table: table.name.clone(),
+                },
+                _ => e,
+            })?;
         Ok(())
     }
 
@@ -546,7 +558,7 @@ mod tests {
             0,
         )];
 
-        Table::create("test_table".to_string(), fields, Some(100)).unwrap()
+        Table::create("test_table".to_string(), fields, Some(100), usize::MAX).unwrap()
     }
 
     #[timeout(1000)]
@@ -885,7 +897,7 @@ mod tests {
                 u64_layout,
                 0,
             )];
-            Table::create("table_z".to_string(), fields, Some(100)).unwrap()
+            Table::create("table_z".to_string(), fields, Some(100), usize::MAX).unwrap()
         };
 
         let table2 = {
@@ -916,7 +928,7 @@ mod tests {
                 u64_layout,
                 0,
             )];
-            Table::create("table_a".to_string(), fields, Some(100)).unwrap()
+            Table::create("table_a".to_string(), fields, Some(100), usize::MAX).unwrap()
         };
 
         let mut transaction = Transaction::new();

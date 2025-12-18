@@ -44,7 +44,7 @@ fn test_full_crud_lifecycle() {
         Field::new("active".to_string(), "bool".to_string(), bool_layout, 268), // 8 + 260 (4 bytes length + 256 bytes data)
     ];
 
-    db.create_table("products".to_string(), fields, None)
+    db.create_table("products".to_string(), fields, None, usize::MAX)
         .unwrap();
 
     // Get table
@@ -150,7 +150,7 @@ fn test_concurrent_read_write_stress() {
         0,
     )];
 
-    db.create_table("stress_test".to_string(), fields, None)
+    db.create_table("stress_test".to_string(), fields, None, usize::MAX)
         .unwrap();
 
     let num_operations = 100_000;
@@ -255,7 +255,7 @@ fn test_procedure_parallel_iteration_1m() {
         0,
     )];
 
-    db.create_table("large_dataset".to_string(), fields, None)
+    db.create_table("large_dataset".to_string(), fields, None, usize::MAX)
         .unwrap();
 
     let table = db.get_table_mut("large_dataset").unwrap();
@@ -337,7 +337,7 @@ fn test_persistence_recovery_simulation() {
         Field::new("position".to_string(), "3xf32".to_string(), vec3_layout, 8),
     ];
 
-    db1.create_table("entities".to_string(), fields, None)
+    db1.create_table("entities".to_string(), fields, None, usize::MAX)
         .unwrap();
 
     // Add some records
@@ -432,7 +432,7 @@ fn test_performance_validation() {
         0,
     )];
 
-    db.create_table("perf_test".to_string(), fields, None)
+    db.create_table("perf_test".to_string(), fields, None, usize::MAX)
         .unwrap();
 
     let table = db.get_table_mut("perf_test").unwrap();

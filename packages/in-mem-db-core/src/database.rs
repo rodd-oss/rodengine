@@ -46,6 +46,7 @@ impl Database {
     /// * `name` - Table name
     /// * `fields` - Field definitions
     /// * `initial_capacity` - Initial buffer capacity in records (default: 1024)
+    /// * `max_buffer_size` - Maximum buffer size in bytes (default: unlimited)
     ///
     /// # Returns
     /// `Result<(), DbError>` indicating success or failure.
@@ -54,12 +55,13 @@ impl Database {
         name: String,
         fields: Vec<crate::table::Field>,
         initial_capacity: Option<usize>,
+        max_buffer_size: usize,
     ) -> Result<(), DbError> {
         let mut tables = self.tables.write().map_err(|_| DbError::LockPoisoned)?;
         if tables.contains_key(&name) {
             return Err(DbError::TableAlreadyExists(name));
         }
-        let table = Table::create(name.clone(), fields, initial_capacity)?;
+        let table = Table::create(name.clone(), fields, initial_capacity, max_buffer_size)?;
         tables.insert(name, table);
         Ok(())
     }

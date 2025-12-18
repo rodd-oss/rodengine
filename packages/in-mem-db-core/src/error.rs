@@ -69,4 +69,12 @@ pub enum DbError {
     /// Data corruption detected
     #[error("Data corruption detected: {0}")]
     DataCorruption(String),
+
+    /// Memory limit exceeded for buffer growth
+    #[error("Memory limit exceeded for table '{table}': requested {requested} bytes, limit {limit} bytes")]
+    MemoryLimitExceeded {
+        requested: usize,
+        limit: usize,
+        table: String,
+    },
 }
