@@ -61,7 +61,8 @@ Table Buffer (Vec<u8>)
 | `f32`    | 4            | 4         | copy_4          |
 | `f64`    | 8            | 8         | copy_8          |
 | `bool`   | 1            | 1         | copy_bool       |
-| `string` | dynamic      | 1         | len_prefix_utf8 |
+| `string` | dynamic (4-byte length prefix + UTF-8) | 1 | len_prefix_utf8 | // max length 2^32-1 bytes
+**String storage**: Variable-length strings stored with 4-byte length prefix + UTF-8 bytes; maximum length 2^32-1 bytes; empty strings occupy 4 bytes (length prefix only).
 
 ### 2.2 Custom Type Registration
 
@@ -87,6 +88,19 @@ Layout:
 - Fields: x@0, y@4, z@8
 - Serializer: memcpy 12 bytes
 ```
+
+### 2.4 Relations and Foreign Keys
+
+Relations define foreign key connections between tables. Each relation includes:
+- **Target table**: The referenced table
+- **Source field**: Field in the source table
+- **Target field**: Field in the target table
+- **Cascade behavior**: Configurable via `on_delete` option:
+  - `NO_ACTION` (default): No automatic action
+  - `CASCADE`: Delete referencing records when referenced record is deleted
+  - `SET_NULL`: Set foreign key field to null if nullable when referenced record is deleted
+
+Relations are stored in both tables' relation vectors and persisted in schema.json.
 
 ## 3. Storage Engine
 
@@ -166,7 +180,7 @@ table.buffer.store(Arc::new(new_buffer));
 
 ### 4.3 Transaction Isolation
 
-- **Read Committed**: Each read sees latest committed buffer
+- **Read-your-writes consistency**: Each read sees latest committed buffer; within a transaction, reads see uncommitted changes from the same transaction
 - **No Phantom Reads**: Buffer immutability guarantees stable snapshot per `Arc`
 - **Write Conflicts**: Last writer wins; no optimistic concurrency control
 
@@ -498,6 +512,11 @@ pub enum DbError {
 - **Records per Cache Line**: `64 / record_size` (minimum 2)
 - **Expected L1 Hit Rate**: > 98% for sequential scans
 - **False Sharing**: Prevented by 64-byte alignment of buffers
+
+### 12.4 Memory Overhead
+
+- **Memory Overhead**: < 5% beyond raw data size
+- **Allocation Count**: Zero allocations in hot path (reads, writes)
 
 ## 13. Safety & Correctness
 

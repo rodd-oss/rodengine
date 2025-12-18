@@ -44,6 +44,59 @@ fn test_custom_type_3xf32_integration() {
     // Execute: Update to [NaN, -inf, +inf]
     // Assert: Buffer contains correct IEEE 754 representations
     // Teardown: Unregister type (requires schema.json update)
+ }
+```
+
+### 1.4 Schema Migration (Field Addition/Removal)
+
+```rust
+fn test_schema_migration_field_addition_removal() {
+    // Setup: Create table with fields: u64 id, string name
+    // Execute: Add new field "active" of type bool via POST /tables/{name}/fields
+    // Assert: Schema updated, record_size increased, existing records rewritten with default value for new field
+    // Verify: Blocking operation - API requests wait until migration completes
+    // Execute: Create new record with all three fields
+    // Assert: New record stored correctly with all fields
+    // Execute: Remove field "name" via DELETE /tables/{name}/fields/name
+    // Assert: Schema updated, record_size decreased, existing records rewritten without removed field
+    // Verify: Blocking rewrite, data preserved for remaining fields
+    // Teardown: Delete table
+ }
+```
+
+### 1.5 Custom Type Registration/Deregistration
+
+```rust
+fn test_custom_type_registration_deregistration() {
+    // Setup: Empty database
+    // Execute: Register custom type "Vector3f32" with size 12, align 4, POD true
+    // Assert: TypeRegistry contains type, schema.json updated
+    // Execute: Create table using Vector3f32 field
+    // Assert: Table creation succeeds, record_size includes 12 bytes
+    // Execute: Create record with Vector3f32 values
+    // Assert: Serialization works, buffer contains correct bytes
+    // Execute: Deregister type Vector3f32 (should fail if table still uses it)
+    // Assert: Error returned, type not removed
+    // Execute: Delete table
+    // Execute: Deregister type Vector3f32
+    // Assert: TypeRegistry no longer contains type, schema.json updated
+    // Teardown: Clean up
+ }
+```
+
+### 1.6 Partial Update (PATCH) Endpoint
+
+```rust
+fn test_patch_partial_update() {
+    // Setup: Create table with fields: u64 id, string name, bool active
+    // Execute: Create record with values [1, "initial", false]
+    // Execute: PATCH /tables/{name}/records/1 with {"values": [null, "updated", true]}
+    // Assert: Only name and active fields updated, id remains unchanged
+    // Verify: Buffer contains updated values at correct offsets
+    // Execute: PATCH with partial field set (only active field)
+    // Assert: Single field updated, others unchanged
+    // Verify: Null values in patch payload leave fields unchanged
+    // Teardown: Delete table
 }
 ```
 
@@ -130,6 +183,37 @@ fn test_arcswap_buffer_drop_integrity() {
     // Verify: Memory usage grows during rapid updates, drops after reader release
     // Measure: Peak memory < 2x baseline (no unbounded growth)
     // Teardown: Confirm all old buffer Arcs dropped, no leaks
+ }
+```
+
+### 3.4 Concurrent Schema Changes
+
+```rust
+fn test_concurrent_schema_changes() {
+    // Setup: Table with initial schema, active readers and writers
+    // Execute: Concurrently:
+    //   - Thread A: Add new field via POST /tables/{name}/fields (blocking)
+    //   - Thread B: Perform reads via GET /records/{id}
+    //   - Thread C: Perform writes via POST /records
+    // Assert: Schema change blocks other operations until complete
+    // Verify: Readers continue to see consistent schema during migration
+    // Verify: Writers after migration succeed with new schema
+    // Execute: Concurrent field removal while reads/writes active
+    // Assert: Similar blocking behavior, data integrity maintained
+    // Teardown: Verify final state matches expected schema and data
+}
+```
+
+### 3.4 Loom Concurrency Validation
+
+```rust
+fn test_loom_concurrency_validation() {
+    // Setup: Use Loom to model concurrent access patterns
+    // Execute: Simulate all possible thread interleavings for ArcSwap operations
+    // Assert: No data races, buffer integrity maintained
+    // Execute: Test transaction isolation with concurrent readers and writers
+    // Assert: Read Committed semantics preserved
+    // Teardown: Ensure Loom tests pass in CI
 }
 ```
 
@@ -173,6 +257,23 @@ fn test_procedure_cache_hit_optimization() {
     // Measure: Perf shows ~1 cache miss per 64 bytes (optimal)
     // Verify: Chunk boundaries respect 64-byte alignment, no record straddles cache lines
     // Teardown: Profile with `perf c2c` to verify no cross-cache-line contention
+ }
+```
+
+### 4.4 Procedure Registration/Deregistration
+
+```rust
+fn test_procedure_registration_deregistration() {
+    // Setup: Empty database
+    // Execute: Register procedure "sum_field" with function pointer
+    // Assert: ProcedureRegistry contains procedure, can be invoked via RPC
+    // Execute: POST /rpc/sum_field with valid parameters
+    // Assert: Procedure executes successfully, returns result
+    // Execute: Deregister procedure "sum_field"
+    // Assert: ProcedureRegistry no longer contains procedure
+    // Execute: POST /rpc/sum_field again
+    // Assert: 404 or error (procedure not found)
+    // Teardown: Clean up
 }
 ```
 
@@ -295,6 +396,36 @@ fn test_relation_scan_performance() {
     // Measure: Time ~ O(posts) / num_cores, no random memory access
     // Verify: Each post's user_id field compared without deserialization (raw u64 comparison)
     // Teardown: Compare to indexed approach (if implemented later)
+ }
+```
+
+### 7.3 Relations API Endpoints
+
+```rust
+fn test_relations_api_endpoints() {
+    // Setup: Create two tables: users (u64 id, string name), posts (u64 id, string content)
+    // Execute: POST /relations with relation definition
+    // Assert: Relation created, stored in schema, returns relation ID
+    // Execute: GET schema.json (or internal API) to verify relation metadata
+    // Execute: DELETE /relations/{id}
+    // Assert: Relation removed from schema
+    // Verify: Tables still exist, no data loss
+    // Teardown: Delete tables
+}
+```
+
+### 7.4 Relation Cascade Behavior Tests
+
+```rust
+fn test_relation_cascade_behavior() {
+    // Setup: Create two tables with foreign key relation, configure on_delete option
+    // Execute: Delete referenced record with CASCADE option
+    // Assert: All referencing records automatically deleted
+    // Execute: Delete referenced record with SET_NULL option (nullable foreign key)
+    // Assert: Foreign key fields set to null in referencing records
+    // Execute: Delete referenced record with NO_ACTION option
+    // Assert: Referencing records remain unchanged (integrity error if enforcement enabled)
+    // Teardown: Clean up tables
 }
 ```
 
@@ -403,6 +534,32 @@ fn test_schema_corruption_detection() {
 }
 ```
 
+### 9.4 Unsafe Code Validation with Miri
+
+```rust
+fn test_unsafe_code_miri_validation() {
+    // Setup: Build with Miri configuration
+    // Execute: Run Miri on all unsafe code blocks
+    // Assert: No undefined behavior detected
+    // Execute: Run Miri with concurrent access patterns
+    // Assert: No data races or memory safety issues
+    // Teardown: Ensure Miri tests pass in CI pipeline
+}
+```
+
+### 9.5 Error Type Coverage
+
+```rust
+fn test_error_type_coverage() {
+    // Setup: Database with various tables and relations
+    // Execute: Trigger each DbError variant through invalid operations
+    // Assert: All error variants are reachable and correctly reported
+    // Execute: Verify error serialization and API error responses
+    // Assert: Errors map to appropriate HTTP status codes
+    // Teardown: Ensure error handling doesn't leak resources
+}
+```
+
 ## 10. Performance Regression Integration Tests
 
 ### 10.1 Baseline Throughput Check
@@ -444,6 +601,21 @@ fn test_false_sharing_prevention() {
     // Execute: Test with records spanning cache lines (if misaligned)
     // Assert: Performance drop > 50% (healthy sensitivity to alignment)
     // Teardown: Document record size recommendations
+}
+```
+
+### 10.4 Memory Overhead and Allocation Verification
+
+```rust
+fn test_memory_overhead_and_allocation() {
+    // Setup: Table with 1M records of known size (e.g., u64 field)
+    // Execute: Measure memory usage via allocator stats
+    // Assert: Memory overhead < 5% beyond raw data size
+    // Execute: Perform 10k read operations while monitoring allocations
+    // Assert: Zero allocations in hot path (reads)
+    // Execute: Perform 10k write operations while monitoring allocations
+    // Assert: One allocation per buffer clone (writes)
+    // Teardown: Record measurements for regression tracking
 }
 ```
 

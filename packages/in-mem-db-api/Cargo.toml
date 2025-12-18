@@ -9,7 +9,7 @@ repository.workspace = true
 readme.workspace = true
 
 [features]
-default = ["hyper", "matchit"]
+default = []
 
 [dependencies]
 in-mem-db-core = { path = "../in-mem-db-core", version = "0.1.0" }
@@ -19,7 +19,10 @@ serde_json = { workspace = true }
 tracing = { workspace = true }
 anyhow = { workspace = true }
 
-hyper = { workspace = true, optional = true }
-matchit = { workspace = true, optional = true }
+hyper = { workspace = true, features = ["full"] }
+hyper-util = { workspace = true, features = ["server", "http1", "http2"] }
+http-body-util = { workspace = true }
+matchit = { workspace = true }
+tokio = { workspace = true }
 
 [dev-dependencies]

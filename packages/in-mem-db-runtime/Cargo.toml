@@ -10,7 +10,7 @@ readme.workspace = true
 
 [features]
 default = ["parallel"]
-parallel = ["dep:rayon", "dep:tokio"]
+parallel = ["dep:rayon"]
 
 [dependencies]
 in-mem-db-core = { path = "../in-mem-db-core", version = "0.1.0" }
@@ -18,8 +18,10 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
 anyhow = { workspace = true }
+tokio = { workspace = true }
 
 rayon = { workspace = true, optional = true }
-tokio = { workspace = true, optional = true }
+hex = "0.4.3"
+parking_lot = "0.12.5"
 
 [dev-dependencies]

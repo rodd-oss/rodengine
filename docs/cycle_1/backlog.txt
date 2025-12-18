@@ -1,218 +1,284 @@
 backlog_start
 phase_core_storage_start
 feature_atomic_buffer_start
-[] task_ab_1: AtomicBuffer struct wraps ArcSwap<Vec<u8>> with capacity tracking
-[] task_ab_2: AtomicBuffer.load() returns Arc<Vec<u8>> with zero-copy read access
-[] task_ab_3: AtomicBuffer.store() atomically swaps buffer with new Vec<u8>
-[] task_ab_4: AtomicBuffer.grow() doubles capacity when exhausted, preserving data
-[] task_ab_5: AtomicBuffer.record_offset() calculates byte offset for record index
+[x] task_ab_1: AtomicBuffer struct wraps ArcSwap<Vec<u8>> with capacity tracking
+[x] task_ab_2: AtomicBuffer.load() returns Arc<Vec<u8>> with zero-copy read access
+[x] task_ab_3: AtomicBuffer.store() atomically swaps buffer with new Vec<u8>
+[x] task_ab_4: AtomicBuffer.grow() doubles capacity when exhausted, preserving data
+[x] task_ab_5: AtomicBuffer.record_offset() calculates byte offset for record index
 feature_atomic_buffer_end
 feature_basic_table_start
-[] task_bt_1: Table struct with name, record_size, buffer, fields, next_id
-[] task_bt_2: Table.create() initializes buffer with calculated record_size
-[] task_bt_3: Table.field_offset() returns byte offset for field within record
-[] task_bt_4: Table.validate_record_size() ensures fields fit within record_size
-[] task_bt_5: Table.next_id() atomically increments and returns new record ID
+[x] task_bt_1: Table struct with name, record_size, buffer, fields, next_id
+[x] task_bt_2: Table.create() initializes buffer with calculated record_size
+[x] task_bt_3: Table.field_offset() returns byte offset for field within record
+[x] task_bt_4: Table.validate_record_size() ensures fields fit within record_size
+[x] task_bt_5: Table.next_id() atomically increments and returns new record ID
 feature_basic_table_end
 phase_core_storage_end
 phase_type_system_start
 feature_builtin_types_start
-[] task_bt_1: TypeLayout struct with size, align, pod flag, serializer function
-[] task_bt_2: Built-in numeric types (i8..u64, f32, f64) register with correct layout
-[] task_bt_3: Bool type registers as 1-byte with bool serializer
-[] task_bt_4: String type registers with dynamic size and length-prefixed serializer
-[] task_bt_5: TypeRegistry stores registered types with lookup by type_id
+[x] task_bt_1: TypeLayout struct with size, align, pod flag, serializer function
+[x] task_bt_2: Built-in numeric types (i8..u64, f32, f64) register with correct layout
+[x] task_bt_3: Bool type registers as 1-byte with bool serializer
+[x] task_bt_4: String type registers with dynamic size and length-prefixed serializer
+[x] task_bt_5: TypeRegistry stores registered types with lookup by type_id
 feature_builtin_types_end
 feature_custom_types_start
-[] task_ct_1: register_type() validates size % align == 0 constraint
-[] task_ct_2: Custom composite type (e.g., 3xf32) registers with correct layout
-[] task_ct_3: TypeRegistry.get() returns TypeLayout for registered type_id
-[] task_ct_4: TypeRegistry.validate() ensures POD types are Copy + 'static
-[] task_ct_5: Serializer functions can be registered for custom types
+[x] task_ct_1: register_type() validates size % align == 0 constraint
+[x] task_ct_2: Custom composite type (e.g., 3xf32) registers with correct layout
+[x] task_ct_3: TypeRegistry.get() returns TypeLayout for registered type_id
+[x] task_ct_4: TypeRegistry.validate() ensures POD types are Copy + 'static
+[x] task_ct_5: Serializer functions can be registered for custom types
 feature_custom_types_end
 feature_field_management_start
-[] task_fm_1: Field struct with name, offset, type_id, layout reference
-[] task_fm_2: Table.add_field() recalculates record_size and field offsets
-[] task_fm_3: Table.remove_field() rebuilds schema with updated offsets
-[] task_fm_4: Field validation ensures no duplicate names within table
-[] task_fm_5: Field type validation ensures registered type_id exists
+[x] task_fm_1: Field struct with name, offset, type_id, layout reference
+[x] task_fm_2: Table.add_field() recalculates record_size and field offsets
+[x] task_fm_3: Table.remove_field() rebuilds schema with updated offsets
+[x] task_fm_4: Field validation ensures no duplicate names within table
+[x] task_fm_5: Field type validation ensures registered type_id exists
 feature_field_management_end
+feature_string_field_fix_start
+[x] task_sf_1: String type has non-zero size for record size calculation (e.g., 256 bytes max)
+[x] task_sf_2: Record size includes space for maximum string length
+[x] task_sf_3: Serialization validates string length fits within allocated space
+[x] task_sf_4: Update tests to use string fields correctly
+[x] task_sf_5: Ensure persistence handles string fields with non-zero size
+feature_string_field_fix_end
 phase_type_system_end
 phase_concurrency_primitives_start
 feature_lockfree_reads_start
-[] task_lr_1: Concurrent readers can load() Arc<Vec<u8>> without blocking
-[] task_lr_2: Readers hold Arc preventing buffer deallocation during read
-[] task_lr_3: Multiple concurrent readers access same buffer simultaneously
-[] task_lr_4: Read operations return raw pointers with proper lifetime bounds
-[] task_lr_5: ArcSwap epoch tracking ensures old buffers dropped after last reader
+[x] task_lr_1: Concurrent readers can load() Arc<Vec<u8>> without blocking
+[x] task_lr_2: Readers hold Arc preventing buffer deallocation during read
+[x] task_lr_3: Multiple concurrent readers access same buffer simultaneously
+[x] task_lr_4: Read operations return raw pointers with proper lifetime bounds
+[x] task_lr_5: ArcSwap epoch tracking ensures old buffers dropped after last reader
 feature_lockfree_reads_end
 feature_atomic_writes_start
-[] task_aw_1: Writer clones buffer via load_full() for modification
-[] task_aw_2: store() performs atomic swap without blocking readers
-[] task_aw_3: Concurrent writers serialize via last-writer-wins semantics
-[] task_aw_4: Failed writes discard cloned buffer without affecting live data
-[] task_aw_5: Write operations complete within <5μs latency constraint
+[x] task_aw_1: Writer clones buffer via load_full() for modification
+[x] task_aw_2: store() performs atomic swap without blocking readers
+[x] task_aw_3: Concurrent writers serialize via last-writer-wins semantics
+[x] task_aw_4: Failed writes discard cloned buffer without affecting live data
+[x] task_aw_5: Write operations complete within <5μs latency constraint
 feature_atomic_writes_end
 phase_concurrency_primitives_end
 phase_basic_crud_start
 feature_record_create_start
-[] task_rc_1: create_record() serializes field values to byte array
-[] task_rc_2: create_record() appends bytes to buffer, returns assigned ID
-[] task_rc_3: create_record() validates field count matches schema
-[] task_rc_4: create_record() handles string fields with length prefix
-[] task_rc_5: create_record() returns error for type mismatch
+[x] task_rc_1: create_record() serializes field values to byte array
+[x] task_rc_2: create_record() appends bytes to buffer, returns assigned ID
+[x] task_rc_3: create_record() validates field count matches schema
+[x] task_rc_4: create_record() handles string fields with length prefix
+[x] task_rc_5: create_record() returns error for type mismatch
 feature_record_create_end
 feature_record_read_start
-[] task_rr_1: read_record() returns raw byte slice for given record ID
-[] task_rr_2: read_record() validates offset within buffer bounds
-[] task_rr_3: read_record_ptr() returns *const T pointer for type-safe access
-[] task_rr_4: read_record() completes within <1μs latency constraint
-[] task_rr_5: Concurrent reads while writing return consistent snapshot
+[x] task_rr_1: read_record() returns raw byte slice for given record ID
+[x] task_rr_2: read_record() validates offset within buffer bounds
+[x] task_rr_3: read_record_ptr() returns *const T pointer for type-safe access
+[x] task_rr_4: read_record() completes within <1μs latency constraint
+[x] task_rr_5: Concurrent reads while writing return consistent snapshot
 feature_record_read_end
 feature_record_update_start
-[] task_ru_1: update_record() replaces record bytes at calculated offset
-[] task_ru_2: update_record() validates new data matches record_size
-[] task_ru_3: partial_update() modifies specific field without full rewrite
-[] task_ru_4: update_record() performs atomic buffer swap
-[] task_ru_5: Failed update leaves original record unchanged
+[x] task_ru_1: update_record() replaces record bytes at calculated offset
+[x] task_ru_2: update_record() validates new data matches record_size
+[x] task_ru_3: partial_update() modifies specific field without full rewrite
+[x] task_ru_4: update_record() performs atomic buffer swap
+[x] task_ru_5: Failed update leaves original record unchanged
 feature_record_update_end
 feature_record_delete_start
-[] task_rd_1: delete_record() sets is_deleted flag in record (soft delete)
-[] task_rd_2: compact_table() rebuilds buffer excluding deleted records
-[] task_rd_3: delete_record() validates record exists before marking deleted
-[] task_rd_4: Compact operation maintains record ID sequence
-[] task_rd_5: Deleted records are skipped during iteration
+[x] task_rd_1: delete_record() sets is_deleted flag in record (soft delete)
+[x] task_rd_2: compact_table() rebuilds buffer excluding deleted records
+[x] task_rd_3: delete_record() validates record exists before marking deleted
+[x] task_rd_4: Compact operation maintains record ID sequence
+[x] task_rd_5: Deleted records are skipped during iteration
 feature_record_delete_end
 phase_basic_crud_end
 phase_transaction_system_start
 feature_staging_buffer_start
-[] task_sb_1: StagingBuffer struct holds table_name, buffer, changes list
-[] task_sb_2: Change enum represents Create, Update, Delete operations
-[] task_sb_3: stage_update() records change with offset and new data
-[] task_sb_4: stage_create() records new record with serialized data
-[] task_sb_5: stage_delete() records record offset for deletion
+[x] task_sb_1: StagingBuffer struct holds table_name, buffer, changes list
+[x] task_sb_2: Change enum represents Create, Update, Delete operations
+[x] task_sb_3: stage_update() records change with offset and new data
+[x] task_sb_4: stage_create() records new record with serialized data
+[x] task_sb_5: stage_delete() records record offset for deletion
 feature_staging_buffer_end
 feature_transaction_isolation_start
-[] task_ti_1: Transaction struct holds HashMap<String, StagingBuffer>
-[] task_ti_2: Transaction changes are isolated from main buffer
-[] task_ti_3: Concurrent transactions operate on independent staging buffers
-[] task_ti_4: Read operations see only committed data (read committed)
-[] task_ti_5: Transaction commit performs all-or-nothing buffer swaps
+[x] task_ti_1: Transaction struct holds HashMap<String, StagingBuffer>
+[x] task_ti_2: Transaction changes are isolated from main buffer
+[x] task_ti_3: Concurrent transactions operate on independent staging buffers
+[x] task_ti_4: Read operations see only committed data (read committed)
+[x] task_ti_5: Transaction commit performs all-or-nothing buffer swaps
 feature_transaction_isolation_end
 feature_atomic_commit_start
-[] task_ac_1: commit() atomically swaps all modified table buffers
-[] task_ac_2: Failed commit discards all staging buffers
-[] task_ac_3: commit() sorts tables by name to prevent deadlock
-[] task_ac_4: commit() returns error if any buffer swap fails
-[] task_ac_5: TransactionHandle provides RAII guard for auto-abort
+[x] task_ac_1: commit() atomically swaps all modified table buffers
+[x] task_ac_2: Failed commit discards all staging buffers
+[x] task_ac_3: commit() sorts tables by name to prevent deadlock
+[x] task_ac_4: commit() returns error if any buffer swap fails
+[x] task_ac_5: TransactionHandle provides RAII guard for auto-abort
 feature_atomic_commit_end
 phase_transaction_system_end
 phase_rest_api_start
 feature_http_server_start
-[] task_hs_1: Hyper server starts on configurable port
-[] task_hs_2: Matchit router maps URL patterns to handlers
-[] task_hs_3: Request deserialization from JSON to Rust types
-[] task_hs_4: Response serialization from Rust types to JSON/bytes
-[] task_hs_5: Error handling returns appropriate HTTP status codes
+[x] task_hs_1: Hyper server starts on configurable port
+[x] task_hs_2: Matchit router maps URL patterns to handlers
+[x] task_hs_3: Request deserialization from JSON to Rust types
+[x] task_hs_4: Response serialization from Rust types to JSON/bytes
+[x] task_hs_5: Error handling returns appropriate HTTP status codes
 feature_http_server_end
 feature_table_ddl_start
-[] task_td_1: POST /tables/{name} creates table with field definitions
-[] task_td_2: DELETE /tables/{name} removes table and buffer
-[] task_td_3: POST /tables/{name}/fields adds field to existing table
-[] task_td_4: DELETE /tables/{name}/fields/{f} removes field from table
-[] task_td_5: DDL operations synchronously write schema.json
+[x] task_td_1: POST /tables/{name} creates table with field definitions
+[x] task_td_2: DELETE /tables/{name} removes table and buffer
+[x] task_td_3: POST /tables/{name}/fields adds field to existing table
+[x] task_td_4: DELETE /tables/{name}/fields/{f} removes field from table
+[x] task_td_5: DDL operations synchronously write schema.json
 feature_table_ddl_end
 feature_record_endpoints_start
-[] task_re_1: POST /tables/{name}/records creates record, returns ID
-[] task_re_2: GET /tables/{name}/records/{id} returns raw bytes
-[] task_re_3: PUT /tables/{name}/records/{id} fully replaces record
-[] task_re_4: PATCH /tables/{name}/records/{id} partially updates record
-[] task_re_5: DELETE /tables/{name}/records/{id} marks record deleted
+[x] task_re_1: POST /tables/{name}/records creates record, returns ID
+[x] task_re_2: GET /tables/{name}/records/{id} returns raw bytes
+[x] task_re_3: PUT /tables/{name}/records/{id} fully replaces record
+[x] task_re_4: PATCH /tables/{name}/records/{id} partially updates record
+[x] task_re_5: DELETE /tables/{name}/records/{id} marks record deleted
 feature_record_endpoints_end
 feature_relation_endpoints_start
-[] task_rel_1: POST /relations creates foreign key relation between tables
-[] task_rel_2: DELETE /relations/{id} removes relation
-[] task_rel_3: Relation validation ensures referenced fields exist
-[] task_rel_4: Relation struct stores from_table, to_table, field mappings
-[] task_rel_5: Relation endpoints update schema.json
+[x] task_rel_1: POST /relations creates foreign key relation between tables
+[x] task_rel_2: DELETE /relations/{id} removes relation
+[x] task_rel_3: Relation validation ensures referenced fields exist
+[x] task_rel_4: Relation struct stores from_table, to_table, field mappings
+[x] task_rel_5: Relation endpoints update schema.json
 feature_relation_endpoints_end
 phase_rest_api_end
 phase_runtime_loop_start
 feature_tick_scheduler_start
-[] task_ts_1: Runtime struct with configurable tickrate (15-120 Hz)
-[] task_ts_2: Tick phases (API, Procedures, Persistence) with time budgets
-[] task_ts_3: API phase processes requests for fixed duration (30% of tick)
-[] task_ts_4: Procedure phase executes parallel procedures (50% of tick)
-[] task_ts_5: Persistence phase triggers async flushes (20% of tick)
+[x] task_ts_1: Runtime struct with configurable tickrate (15-120 Hz)
+[x] task_ts_2: Tick phases (API, Procedures, Persistence) with time budgets
+[x] task_ts_3: API phase processes requests for fixed duration (30% of tick)
+[x] task_ts_4: Procedure phase executes parallel procedures (50% of tick)
+[x] task_ts_5: Persistence phase triggers async flushes (20% of tick)
 feature_tick_scheduler_end
 feature_rate_limiting_start
-[] task_rl_1: max_api_requests_per_tick limits request processing per tick
-[] task_rl_2: Request queue with bounded capacity (tickrate * 100)
-[] task_rl_3: Queue overflow returns 503 Service Unavailable
-[] task_rl_4: Request prioritization (DDL before DML)
-[] task_rl_5: Metrics track dropped_requests and queue_size
+[x] task_rl_1: max_api_requests_per_tick limits request processing per tick
+[x] task_rl_2: Request queue with bounded capacity (tickrate * 100)
+[x] task_rl_3: Queue overflow returns 503 Service Unavailable
+[x] task_rl_4: Request prioritization (DDL before DML)
+[x] task_rl_5: Metrics track dropped_requests and queue_size
 feature_rate_limiting_end
 feature_procedure_queue_start
-[] task_pq_1: ProcedureCall struct with name, params, transaction handle
-[] task_pq_2: Procedure queue holds pending procedures across ticks
-[] task_pq_3: Procedure execution respects chunk_time per tick
-[] task_pq_4: Long procedures can span multiple ticks
-[] task_pq_5: Procedure panics are caught and logged, transaction aborted
+[x] task_pq_1: ProcedureCall struct with name, params, transaction handle
+[x] task_pq_2: Procedure queue holds pending procedures across ticks
+[x] task_pq_3: Procedure execution respects chunk_time per tick
+[x] task_pq_4: Long procedures can span multiple ticks
+[x] task_pq_5: Procedure panics are caught and logged, transaction aborted
 feature_procedure_queue_end
 phase_runtime_loop_end
 phase_procedure_system_start
 feature_procedure_registry_start
-[] task_pr_1: ProcedureFn type signature accepts db, tx, params
-[] task_pr_2: ProcedureRegistry stores name → function mapping
-[] task_pr_3: register_procedure() adds function to registry
-[] task_pr_4: RPC endpoint POST /rpc/{name} invokes registered procedure
-[] task_pr_5: Procedure parameters validated against expected schema
+[x] task_pr_1: ProcedureFn type signature accepts db, tx, params
+[x] task_pr_2: ProcedureRegistry stores name → function mapping
+[x] task_pr_3: register_procedure() adds function to registry
+[x] task_pr_4: RPC endpoint POST /rpc/{name} invokes registered procedure
+[x] task_pr_5: Procedure parameters validated against expected schema
 feature_procedure_registry_end
 feature_parallel_iteration_start
-[] task_pi_1: Table.buffer.par_chunks_exact() splits data across cores
-[] task_pi_2: Procedure receives isolated staging buffer for writes
-[] task_pi_3: Parallel iteration uses Rayon thread pool
-[] task_pi_4: Chunk boundaries aligned to cache lines (64-byte)
-[] task_pi_5: Parallel reduction aggregates results across cores
+[x] task_pi_1: Table.buffer.par_chunks_exact() splits data across cores
+[x] task_pi_2: Procedure receives isolated staging buffer for writes
+[x] task_pi_3: Parallel iteration uses Rayon thread pool
+[x] task_pi_4: Chunk boundaries aligned to cache lines (64-byte)
+[x] task_pi_5: Parallel reduction aggregates results across cores
 feature_parallel_iteration_end
 feature_transactional_procedures_start
-[] task_tp_1: Procedure runs with TransactionHandle for isolation
-[] task_tp_2: Procedure changes visible only after commit
-[] task_p_3: Procedure commit performs single atomic publish
-[] task_tp_4: Procedure abort discards staging buffer
-[] task_tp_5: Nested procedures not allowed (single transaction scope)
+[x] task_tp_1: Procedure runs with TransactionHandle for isolation
+[x] task_tp_2: Procedure changes visible only after commit
+[x] task_tp_3: Procedure commit performs single atomic publish
+[x] task_tp_4: Procedure abort discards staging buffer
+[x] task_tp_5: Nested procedures not allowed (single transaction scope)
 feature_transactional_procedures_end
 phase_procedure_system_end
 phase_persistence_start
 feature_schema_persistence_start
-[] task_sp_1: schema.json format includes tables, fields, relations, custom_types
-[] task_sp_2: DDL operations trigger synchronous schema.json write
-[] task_sp_3: Atomic rename from .tmp to schema.json prevents corruption
-[] task_sp_4: Database startup loads schema.json and recreates tables
-[] task_sp_5: Schema validation on load ensures consistency
+[x] task_sp_1: schema.json format includes tables, fields, relations, custom_types
+[x] task_sp_2: DDL operations trigger synchronous schema.json write
+[x] task_sp_3: Atomic rename from .tmp to schema.json prevents corruption
+[x] task_sp_4: Database startup loads schema.json and recreates tables
+[x] task_sp_5: Schema validation on load ensures consistency
 feature_schema_persistence_end
 feature_data_flush_start
-[] task_df_1: Data files stored as raw binary dumps (data/{table}.bin)
-[] task_df_2: Async flush thread writes staging buffers to temp files
-[] task_df_3: Atomic rename replaces live data file
-[] task_df_4: Flush interval configurable (default: every 10 ticks)
-[] task_df_5: Flush failures logged but don't block operations
+[x] task_df_1: Data files stored as raw binary dumps (data/{table}.bin)
+[x] task_df_2: Async flush thread writes staging buffers to temp files
+[x] task_df_3: Atomic rename replaces live data file
+[x] task_df_4: Flush interval configurable (default: every 10 ticks)
+[x] task_df_5: Flush failures logged but don't block operations
 feature_data_flush_end
 feature_recovery_start
-[] task_rec_1: Recovery loads schema.json and validates custom types
-[] task_rec_2: mmap() maps data files into Vec<u8> buffers
-[] task_rec_3: Record count verified (file_size / record_size)
-[] task_rec_4: next_id restored from max ID in data
-[] task_rec_5: Corruption detection with checksums
+[x] task_rec_1: Recovery loads schema.json and validates custom types
+[x] task_rec_2: mmap() maps data files into Vec<u8> buffers
+[x] task_rec_3: Record count verified (file_size / record_size)
+[x] task_rec_4: next_id restored from max ID in data
+[x] task_rec_5: Corruption detection with checksums
 feature_recovery_end
 phase_persistence_end
+phase_system_integration_start
+feature_runtime_integration_start
+[x] task_ri_1: db-server creates and starts Runtime with database and config
+[x] task_ri_2: API handlers send requests to Runtime via channel
+[x] task_ri_3: Runtime processes API requests in tick phases
+[x] task_ri_4: Runtime rate limiting integrated with API server
+[x] task_ri_5: Runtime procedure queue integrated with RPC endpoint
+feature_runtime_integration_end
+feature_check_tech_debt_start
+[x] task_td_01: Find all TODO's in a codebase and compare with the backlog, add it to the backlog if not included
+feature_check_tech_debt_end
+feature_persistence_custom_types_start
+[x] task_pct_1: Extract custom types from type registry in persistence schema saving
+feature_persistence_custom_types_end
+feature_runtime_request_handlers_start
+[x] task_rh_1: Implement CreateTable/DeleteTable handlers in runtime
+[x] task_rh_2: Implement AddField/RemoveField handlers in runtime
+[x] task_rh_3: Implement CreateRelation/DeleteRelation handlers in runtime
+[x] task_rh_4: Implement CRUD operation handlers in runtime
+[x] task_rh_5: Ensure error handling and transaction isolation for runtime requests
+[x] task_rh_6: Implement parallel procedure execution with Rayon
+feature_runtime_request_handlers_end
+feature_api_handler_completion_start
+[x] task_ah_1: Complete record creation endpoint (POST /records)
+[x] task_ah_2: Complete record read endpoint (GET /records/{id})
+[x] task_ah_3: Complete record update endpoints (PUT/PATCH /records/{id})
+[x] task_ah_4: Complete record deletion endpoint (DELETE /records/{id})
+[x] task_ah_5: Complete relation creation/deletion endpoints
+[x] task_ah_6: Complete RPC endpoint (POST /rpc/{name}) with runtime integration
+feature_api_handler_completion_end
+feature_persistence_integration_start
+[x] task_pi_1: Runtime flush commands processed by PersistenceManager
+[x] task_pi_2: Background persistence thread or tick-based flushing
+[x] task_pi_3: PersistenceManager.tick() called from Runtime or separate thread
+[x] task_pi_4: Flush commands handled without blocking API operations
+[x] task_pi_5: Persistence errors logged and monitored
+feature_persistence_integration_end
+feature_mmap_support_start
+[x] task_ms_1: Add memmap2 dependency to Cargo.toml
+[x] task_ms_2: Implement mmap-based data file loading
+[x] task_ms_3: Memory-mapped files support zero-copy reads
+[x] task_ms_4: Handle file growth with mmap remapping
+[x] task_ms_5: Test mmap performance vs read_to_end
+feature_mmap_support_end
+feature_corruption_detection_start
+[x] task_cd_1: Add checksum (CRC32) to data files
+[x] task_cd_2: Verify checksum on data load
+[x] task_cd_3: Store checksum in schema.json for validation
+[x] task_cd_4: Handle checksum mismatch with error recovery
+[x] task_cd_5: Checksum calculation optimized for performance
+feature_corruption_detection_end
+feature_missing_tests_start
+[x] task_mt_1: Implement async persistence atomicity test (6.1)
+[x] task_mt_2: Implement schema persistence with custom types test (6.2)
+[x] task_mt_3: Implement parallel persistence during write bursts test (6.3)
+[x] task_mt_4: Add runtime integration tests
+[x] task_mt_5: Add system integration smoke tests
+feature_missing_tests_end
+phase_system_integration_end
 phase_integration_start
 feature_end_to_end_workflow_start
-[] task_ew_1: Full CRUD lifecycle: create table → add records → read → update → delete
-[] task_ew_2: Concurrent read/write stress test with 100k operations
-[] task_ew_3: Procedure execution with parallel iteration across 1M records
-[] task_ew_4: Persistence and recovery simulation (crash and restart)
-[] task_ew_5: Performance validation against latency/throughput targets
+[x] task_ew_1: Full CRUD lifecycle: create table → add records → read → update → delete
+[x] task_ew_2: Concurrent read/write stress test with 100k operations
+[x] task_ew_3: Procedure execution with parallel iteration across 1M records
+[x] task_ew_4: Persistence and recovery simulation (crash and restart)
+[x] task_ew_5: Performance validation against latency/throughput targets
 feature_end_to_end_workflow_end
 feature_failure_modes_start
 [] task_fm_1: Procedure panic recovery without data corruption
@@ -229,4 +295,77 @@ feature_performance_regression_start
 [] task_perf_5: Cache line contention prevention verification
 feature_performance_regression_end
 phase_integration_end
+phase_robustness_hardening_start
+feature_api_completeness_start
+[] task_ap_1: Add GET /tables endpoint to list all tables
+[] task_ap_2: Add GET /tables/{name}/records endpoint with query parameters  
+[] task_ap_3: Implement proper HTTP status codes (400 for client errors, 201 for creation)
+[] task_ap_4: Add missing API documentation for all endpoints
+[] task_ap_5: Ensure consistent response formats across all endpoints
+feature_api_completeness_end
+feature_error_handling_refinement_start
+[] task_er_1: Replace unwrap() calls with proper error propagation in API handlers
+[] task_er_2: Implement RouterError::BadRequest variant for client errors
+[] task_er_3: Use RouterError::into() in handle_request for proper status codes
+[] task_er_4: Replace unwrap() in runtime byte conversions with try_into()
+[] task_er_5: Add validation for non-existent procedures in validate_params()
+[] task_er_6: Replace spawn_blocking with async channels (tokio::sync::mpsc) for API requests
+feature_error_handling_refinement_end
+feature_api_testing_start
+[] task_at_1: Add unit tests for all API handlers
+[] task_at_2: Add integration tests for REST endpoints
+[] task_at_3: Test error scenarios (400, 404, 500 responses)
+[] task_at_4: Test concurrent API requests
+[] task_at_5: Test API request size limits and validation
+feature_api_testing_end
+feature_security_hardening_start
+[] task_sh_1: Implement input validation middleware
+[] task_sh_2: Add request size limits to prevent DoS
+[] task_sh_3: Implement rate limiting middleware
+[] task_sh_4: Hide internal error details in production responses
+[] task_sh_5: Add authentication/authorization middleware placeholder
+feature_security_hardening_end
+feature_transaction_concurrency_fix_start
+[] task_tc_1: Implement MVCC or version stamps for transaction conflict detection
+[] task_tc_2: Add optimistic concurrency control to prevent lost updates
+[] task_tc_3: Enhance Transaction.apply_staging_buffer with conflict resolution
+[] task_tc_4: Add transaction retry logic for conflicting commits
+[] task_tc_5: Test concurrent transaction scenarios with race conditions
+feature_transaction_concurrency_fix_end
+feature_buffer_growth_race_fix_start
+[] task_bg_1: Fix AtomicBuffer.grow() race condition with compare-and-swap
+[] task_bg_2: Implement ArcSwap.rcu pattern for atomic read-copy-update
+[] task_bg_3: Add capacity growth limits to prevent memory exhaustion
+[] task_bg_4: Test concurrent buffer growth with multiple writers
+[] task_bg_5: Add metrics for buffer growth events and contention
+feature_buffer_growth_race_fix_end
+feature_parallel_execution_consistency_start
+[] task_pe_1: Align parallel procedure timeout handling with sequential behavior
+[] task_pe_2: Ensure timed-out procedures are requeued in parallel execution
+[] task_pe_3: Fix queue capacity calculation overflow with checked_mul()
+[] task_pe_4: Make string field size configurable or schema-derived
+[] task_pe_5: Add tests for parallel execution edge cases
+feature_parallel_execution_consistency_end
+feature_type_system_enhancement_start
+[] task_ty_1: Add runtime validation for size % align == 0 constraint in type registration
+[] task_ty_2: Enhance persistence metadata to not assume first field is u64 ID
+[] task_ty_3: Improve string type with UTF-8 validation and configurable max size
+[] task_ty_4: Add safety documentation for unsafe pointer usage
+[] task_ty_5: Centralize align_offset function to avoid duplication
+feature_type_system_enhancement_end
+feature_runtime_testing_start
+[] task_rt_1: Add tests for parallel execution feature
+[] task_rt_2: Test queue full/dropped request scenarios
+[] task_rt_3: Test persistence phase functionality
+[] task_rt_4: Test error recovery paths
+[] task_rt_5: Add stress tests for concurrent operations
+feature_runtime_testing_end
+feature_code_cleanup_start
+[] task_cc_1: Remove empty runtime.rs file or implement missing functionality
+[] task_cc_2: Remove empty middleware/ module or implement middleware
+[] task_cc_3: Replace println!/eprintln! with tracing macros in API server
+[] task_cc_4: Remove duplicate align_offset function
+[] task_cc_5: Clean up unused imports and dead code
+feature_code_cleanup_end
+phase_robustness_hardening_end
 backlog_end

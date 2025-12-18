@@ -10,6 +10,7 @@ interface CountOptions {
   excludeNodeModules?: boolean;
   excludeTarget?: boolean;
   includeMd?: boolean;
+  excludeLockFiles?: boolean;
 }
 
 async function countLines(options: CountOptions = {}): Promise<void> {
@@ -19,6 +20,7 @@ async function countLines(options: CountOptions = {}): Promise<void> {
     excludeNodeModules = true,
     excludeTarget = true,
     includeMd = false,
+    excludeLockFiles = true,
   } = options;
 
   const patterns = ["**/*"];
@@ -38,6 +40,10 @@ async function countLines(options: CountOptions = {}): Promise<void> {
 
   if (excludeTarget) {
     ignorePatterns.push("**/target/**");
+  }
+
+  if (excludeLockFiles) {
+    ignorePatterns.push("**/*.lock");
   }
 
   ignorePatterns.push("**/.git/**");
@@ -117,6 +123,8 @@ for (const arg of args) {
     options.excludeNodeModules = false;
   } else if (arg === "--keep-target") {
     options.excludeTarget = false;
+  } else if (arg === "--keep-lock-files") {
+    options.excludeLockFiles = false;
   } else if (arg === "--help" || arg === "-h") {
     console.log(`
 Usage: bun run scripts/count-lines.ts [options]
@@ -127,10 +135,11 @@ Options:
   --keep-bun-lock        Include bun.lock file (excluded by default)
   --keep-node-modules    Include node_modules (excluded by default)
   --keep-target          Include target directories (excluded by default)
+  --keep-lock-files      Include .lock files (excluded by default)
   --help, -h            Show this help message
 
 Default behavior:
-  - Excludes: .git, node_modules, target, bun.lock
+  - Excludes: .git, node_modules, target, bun.lock, *.lock files
   - Includes: all other files including markdown
 `);
     process.exit(0);

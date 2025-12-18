@@ -11,6 +11,7 @@ readme.workspace = true
 [features]
 default = []
 persist = ["dep:memmap2"]
+parallel = ["dep:rayon"]
 
 [dependencies]
 arc-swap.workspace = true
@@ -18,8 +19,20 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+rayon = { workspace = true, optional = true }
+crc32fast.workspace = true
 
 memmap2 = { workspace = true, optional = true }
 
 [dev-dependencies]
 anyhow.workspace = true
+tempfile.workspace = true
+criterion = { workspace = true }
+
+[[bench]]
+name = "mmap_benchmark"
+harness = false
+
+[[test]]
+name = "integration"
+path = "tests/integration/mod.rs"

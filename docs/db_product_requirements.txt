@@ -13,11 +13,12 @@
 - **Table**: Named collection of records with fixed schema
 - **Field**: Typed column defined by name and data type
 - **Relation**: Explicit foreign key connections between tables (all tables relation-capable)
+- **Relation Cascade Behavior**: Configurable via `on_delete` option: `NO_ACTION` (default), `CASCADE` (delete referencing records), `SET_NULL` (set foreign key field to null if nullable)
 - **Record**: Tightly packed byte sequence representing one row; accessed via unsafe cast to struct
 
 ## 3. Type System
-
 - **Built-in Types**: `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, `f32`, `f64`, `bool`, `String` (inline length-prefixed)
+- **String Storage**: Variable-length strings stored with 4-byte length prefix + UTF-8 bytes; maximum length 2^32-1 bytes; empty strings occupy 4 bytes (length prefix only)
 - **Custom Types**: Extensible composite types (e.g., `Vector3f32` as `3xf32`)
 - **Type Registration**: Custom types must be `Pod` (Plain Old Data) and registerable at runtime
 
@@ -99,7 +100,7 @@ POST   /rpc/{procedure_name}       // Execute procedure with JSON params
 
 - **Unsafe Code**: Required for pointer casting; must pass Miri tests and have explicit `SAFETY` comments
 - **No SQL**: No query parser, optimizer, or ad-hoc filtering; all logic in procedures
-- **Schema Migrations**: Adding/removing fields requires full table rewrite; blocking operation
+- **Schema Migrations**: Adding/removing fields requires full table rewrite; blocking operation that prevents other DDL/DML operations on the table until completion. Field addition fills new field with default values (zero for numeric types, empty string for strings, false for bool). Field removal discards data for that field; migration is atomic and rollback-safe.
 
 ## 13. Deliverables
 
