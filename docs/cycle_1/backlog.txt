@@ -283,7 +283,7 @@ feature_end_to_end_workflow_end
 feature_failure_modes_start
 [x] task_fm_1: Procedure panic recovery without data corruption
 [x] task_fm_2: Add [#timeout] for each test
-[] task_fm_3: Schema corruption detection and graceful shutdown
+[x] task_fm_3: Schema corruption detection and graceful shutdown
 [] task_fm_4: Memory pressure handling with buffer growth limits
 [] task_fm_5: Network timeout handling for API requests
 [] task_fm_6: Disk full persistence error handling

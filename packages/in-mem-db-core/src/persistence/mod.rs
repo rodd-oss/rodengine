@@ -177,10 +177,10 @@ impl PersistenceManager {
         }
 
         // Ensure custom types are registered
-        for (type_id, type_schema) in schema.custom_types {
+        for (type_id, type_schema) in &schema.custom_types {
             type_registry
                 .ensure_type_registered(
-                    &type_id,
+                    type_id,
                     type_schema.size,
                     type_schema.align,
                     type_schema.pod,
@@ -192,6 +192,9 @@ impl PersistenceManager {
                     ))
                 })?;
         }
+
+        // Validate schema integrity
+        self.validate_schema(&schema, &type_registry)?;
 
         // Create database
         let db = Database::with_type_registry(type_registry);
@@ -748,6 +751,163 @@ impl PersistenceManager {
                     "Checksum mismatch for table '{}': expected {:08x}, got {:08x}",
                     table_name, expected_checksum, actual_checksum
                 )));
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Validates schema integrity for corruption detection.
+    ///
+    /// # Arguments
+    /// * `schema` - Schema to validate
+    /// * `type_registry` - Type registry for type validation
+    ///
+    /// # Returns
+    /// `Result<(), DbError>` indicating success or validation failure.
+    fn validate_schema(
+        &self,
+        schema: &SchemaFile,
+        type_registry: &TypeRegistry,
+    ) -> Result<(), DbError> {
+        // Validate custom types
+        for (type_id, type_schema) in &schema.custom_types {
+            if type_schema.size == 0 {
+                return Err(DbError::DataCorruption(format!(
+                    "Custom type '{}' has zero size",
+                    type_id
+                )));
+            }
+            if type_schema.align == 0 {
+                return Err(DbError::DataCorruption(format!(
+                    "Custom type '{}' has zero alignment",
+                    type_id
+                )));
+            }
+            if !type_schema.align.is_power_of_two() {
+                return Err(DbError::DataCorruption(format!(
+                    "Custom type '{}' alignment {} is not a power of two",
+                    type_id, type_schema.align
+                )));
+            }
+            if type_schema.size % type_schema.align != 0 {
+                return Err(DbError::DataCorruption(format!(
+                    "Custom type '{}' size {} not multiple of alignment {}",
+                    type_id, type_schema.size, type_schema.align
+                )));
+            }
+        }
+
+        // Validate each table
+        for (table_name, table_schema) in &schema.tables {
+            // Validate duplicate field names
+            let mut seen_names = std::collections::HashSet::new();
+            for field_schema in &table_schema.fields {
+                if !seen_names.insert(&field_schema.name) {
+                    return Err(DbError::DataCorruption(format!(
+                        "Duplicate field name '{}' in table '{}'",
+                        field_schema.name, table_name
+                    )));
+                }
+            }
+
+            // Validate field types exist
+            for field_schema in &table_schema.fields {
+                if !type_registry.type_ids().contains(&field_schema.r#type) {
+                    return Err(DbError::DataCorruption(format!(
+                        "Unknown type '{}' for field '{}' in table '{}'",
+                        field_schema.r#type, field_schema.name, table_name
+                    )));
+                }
+            }
+
+            // Build temporary fields to validate layout
+            let mut fields = Vec::new();
+            for field_schema in &table_schema.fields {
+                let layout = type_registry.get(&field_schema.r#type).ok_or_else(|| {
+                    DbError::DataCorruption(format!(
+                        "Type '{}' not found for field '{}'",
+                        field_schema.r#type, field_schema.name
+                    ))
+                })?;
+                let field = crate::table::Field::new(
+                    field_schema.name.clone(),
+                    field_schema.r#type.clone(),
+                    layout.clone(),
+                    field_schema.offset,
+                );
+                fields.push(field);
+            }
+
+            // Validate record size matches stored record_size
+            let calculated_record_size = crate::table::Table::calculate_record_size(&fields)
+                .map_err(|e| {
+                    DbError::DataCorruption(format!(
+                        "Record size calculation failed for table '{}': {}",
+                        table_name, e
+                    ))
+                })?;
+            if calculated_record_size != table_schema.record_size {
+                return Err(DbError::DataCorruption(format!(
+                    "Record size mismatch for table '{}': stored {}, calculated {}",
+                    table_name, table_schema.record_size, calculated_record_size
+                )));
+            }
+
+            // Validate field offsets fit within record size
+            crate::table::Table::validate_record_size(&fields, table_schema.record_size).map_err(
+                |e| {
+                    DbError::DataCorruption(format!(
+                        "Field validation failed for table '{}': {}",
+                        table_name, e
+                    ))
+                },
+            )?;
+
+            // Validate field alignment and overlapping fields
+            crate::table::Table::validate_field_layout(&fields).map_err(|e| {
+                DbError::DataCorruption(format!(
+                    "Field layout validation failed for table '{}': {}",
+                    table_name, e
+                ))
+            })?;
+        }
+
+        // Validate relations (after all tables validated)
+        for (table_name, table_schema) in &schema.tables {
+            for relation_schema in &table_schema.relations {
+                // Check target table exists
+                if !schema.tables.contains_key(&relation_schema.to_table) {
+                    return Err(DbError::DataCorruption(format!(
+                        "Relation target table '{}' not found for relation from '{}'.'{}'",
+                        relation_schema.to_table, table_name, relation_schema.from_field
+                    )));
+                }
+
+                // Check source field exists
+                let source_field_exists = table_schema
+                    .fields
+                    .iter()
+                    .any(|f| f.name == relation_schema.from_field);
+                if !source_field_exists {
+                    return Err(DbError::DataCorruption(format!(
+                        "Relation source field '{}' not found in table '{}'",
+                        relation_schema.from_field, table_name
+                    )));
+                }
+
+                // Check target field exists in target table
+                let target_table = &schema.tables[&relation_schema.to_table];
+                let target_field_exists = target_table
+                    .fields
+                    .iter()
+                    .any(|f| f.name == relation_schema.to_field);
+                if !target_field_exists {
+                    return Err(DbError::DataCorruption(format!(
+                        "Relation target field '{}' not found in table '{}'",
+                        relation_schema.to_field, relation_schema.to_table
+                    )));
+                }
             }
         }
 

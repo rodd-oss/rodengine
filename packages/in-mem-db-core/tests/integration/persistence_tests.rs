@@ -373,3 +373,154 @@ fn test_persistence_during_write_burst() {
 
     println!("Test completed with {} persistence ticks", flush_count);
 }
+
+/// Test 9.3: Schema Corruption Detection and Graceful Shutdown
+///
+/// Tests that corrupted schema files are detected and handled gracefully.
+#[timeout(1000)]
+#[test]
+fn test_schema_corruption_detection() {
+    use in_mem_db_core::error::DbError;
+
+    let temp_dir = tempdir().unwrap();
+    let config = DbConfig {
+        data_dir: temp_dir.path().to_path_buf(),
+        ..Default::default()
+    };
+
+    // Create a valid schema first
+    let persistence = PersistenceManager::new(&config);
+    let type_registry = Arc::new(TypeRegistry::new());
+    in_mem_db_core::types::register_builtin_types(&type_registry).unwrap();
+
+    // Create database with a table
+    let db = Database::with_type_registry(type_registry.clone());
+    let u64_layout = db.type_registry().get("u64").unwrap().clone();
+    let fields = vec![Field::new(
+        "id".to_string(),
+        "u64".to_string(),
+        u64_layout,
+        0,
+    )];
+    db.create_table("test".to_string(), fields, None).unwrap();
+    persistence.save_schema(&db).unwrap();
+
+    let schema_path = temp_dir.path().join("schema.json");
+
+    // Test 1: Duplicate field names
+    let schema_contents = fs::read_to_string(&schema_path).unwrap();
+    let mut schema_json: serde_json::Value = serde_json::from_str(&schema_contents).unwrap();
+    // Duplicate the first field
+    if let Some(tables) = schema_json
+        .get_mut("tables")
+        .and_then(|t| t.as_object_mut())
+    {
+        if let Some(test_table) = tables.get_mut("test").and_then(|t| t.as_object_mut()) {
+            if let Some(fields) = test_table.get_mut("fields").and_then(|f| f.as_array_mut()) {
+                let duplicate_field = fields[0].clone();
+                fields.push(duplicate_field);
+            }
+        }
+    }
+    fs::write(
+        &schema_path,
+        serde_json::to_string_pretty(&schema_json).unwrap(),
+    )
+    .unwrap();
+
+    let persistence2 = PersistenceManager::new(&config);
+    let type_registry2 = Arc::new(TypeRegistry::new());
+    in_mem_db_core::types::register_builtin_types(&type_registry2).unwrap();
+    let result = persistence2.load_schema(type_registry2);
+    assert!(matches!(result, Err(DbError::DataCorruption(_))));
+    if let Err(DbError::DataCorruption(msg)) = result {
+        assert!(msg.contains("Duplicate field name"));
+    }
+
+    // Restore valid schema
+    fs::write(&schema_path, &schema_contents).unwrap();
+
+    // Test 2: Invalid custom type alignment (not power of two)
+    let mut schema_json: serde_json::Value = serde_json::from_str(&schema_contents).unwrap();
+    if let Some(custom_types) = schema_json
+        .get_mut("custom_types")
+        .and_then(|c| c.as_object_mut())
+    {
+        let mut invalid_type = serde_json::Map::new();
+        invalid_type.insert("size".to_string(), serde_json::json!(12));
+        invalid_type.insert("align".to_string(), serde_json::json!(3)); // not power of two
+        invalid_type.insert("pod".to_string(), serde_json::json!(true));
+        custom_types.insert(
+            "invalid".to_string(),
+            serde_json::Value::Object(invalid_type),
+        );
+    }
+    fs::write(
+        &schema_path,
+        serde_json::to_string_pretty(&schema_json).unwrap(),
+    )
+    .unwrap();
+
+    let persistence3 = PersistenceManager::new(&config);
+    let type_registry3 = Arc::new(TypeRegistry::new());
+    in_mem_db_core::types::register_builtin_types(&type_registry3).unwrap();
+    let result = persistence3.load_schema(type_registry3);
+    assert!(matches!(result, Err(DbError::DataCorruption(_))));
+    if let Err(DbError::DataCorruption(msg)) = result {
+        assert!(msg.contains("alignment") && msg.contains("power of two"));
+    }
+
+    // Restore valid schema
+    fs::write(&schema_path, &schema_contents).unwrap();
+
+    // Test 3: Field offset exceeds record size
+    let mut schema_json: serde_json::Value = serde_json::from_str(&schema_contents).unwrap();
+    if let Some(tables) = schema_json
+        .get_mut("tables")
+        .and_then(|t| t.as_object_mut())
+    {
+        if let Some(test_table) = tables.get_mut("test").and_then(|t| t.as_object_mut()) {
+            if let Some(fields) = test_table.get_mut("fields").and_then(|f| f.as_array_mut()) {
+                if let Some(first_field) = fields.get_mut(0) {
+                    if let Some(obj) = first_field.as_object_mut() {
+                        obj.insert("offset".to_string(), serde_json::json!(1000));
+                        // far beyond record size
+                    }
+                }
+            }
+        }
+    }
+    fs::write(
+        &schema_path,
+        serde_json::to_string_pretty(&schema_json).unwrap(),
+    )
+    .unwrap();
+
+    let persistence4 = PersistenceManager::new(&config);
+    let type_registry4 = Arc::new(TypeRegistry::new());
+    in_mem_db_core::types::register_builtin_types(&type_registry4).unwrap();
+    let result = persistence4.load_schema(type_registry4);
+    assert!(matches!(result, Err(DbError::DataCorruption(_))));
+    if let Err(DbError::DataCorruption(msg)) = result {
+        println!("Error message: {}", msg);
+        assert!(
+            msg.contains("Record size mismatch")
+                || msg.contains("exceeds record size")
+                || msg.contains("Field validation failed")
+        );
+    }
+
+    // Restore valid schema
+    fs::write(&schema_path, &schema_contents).unwrap();
+
+    // Test 4: Invalid JSON structure (should be caught by serde)
+    fs::write(&schema_path, "invalid json").unwrap();
+    let persistence5 = PersistenceManager::new(&config);
+    let type_registry5 = Arc::new(TypeRegistry::new());
+    in_mem_db_core::types::register_builtin_types(&type_registry5).unwrap();
+    let result = persistence5.load_schema(type_registry5);
+    // This should be SerializationError, not DataCorruption
+    assert!(matches!(result, Err(DbError::SerializationError(_))));
+
+    println!("All schema corruption detection tests passed");
+}

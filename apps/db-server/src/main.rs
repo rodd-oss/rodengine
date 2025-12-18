@@ -58,9 +58,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Load or create database
     let type_registry = Arc::new(in_mem_db_core::types::TypeRegistry::new());
-    let db = persistence
-        .load_schema(type_registry)
-        .map_err(|e| format!("Failed to load database: {}", e))?;
+    in_mem_db_core::types::register_builtin_types(&type_registry).unwrap();
+    let db = match persistence.load_schema(type_registry) {
+        Ok(db) => db,
+        Err(in_mem_db_core::error::DbError::DataCorruption(msg)) => {
+            tracing::error!("Schema corruption detected: {}", msg);
+            tracing::error!("Database cannot start. Please restore from backup or repair schema.");
+            std::process::exit(1);
+        }
+        Err(e) => return Err(format!("Failed to load database: {}", e).into()),
+    };
 
     // Load table data
     let table_names = db.table_names();

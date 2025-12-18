@@ -120,6 +120,9 @@ impl Table {
         // Validate field offsets fit within record size
         Self::validate_record_size(&fields, record_size)?;
 
+        // Validate field alignment and overlapping fields
+        Self::validate_field_layout(&fields)?;
+
         // Set initial capacity (records -> bytes)
         let capacity_records = initial_capacity.unwrap_or(1024);
         let capacity_bytes =
@@ -165,7 +168,10 @@ impl Table {
     ///
     /// # Returns
     /// `Result<(), DbError>` indicating success or validation failure.
-    fn validate_record_size(fields: &[Field], record_size: usize) -> Result<(), DbError> {
+    pub(crate) fn validate_record_size(
+        fields: &[Field],
+        record_size: usize,
+    ) -> Result<(), DbError> {
         for field in fields {
             let field_end =
                 field
@@ -187,6 +193,42 @@ impl Table {
         Ok(())
     }
 
+    /// Validates field alignment and overlapping fields.
+    ///
+    /// # Arguments
+    /// * `fields` - Field definitions to validate
+    ///
+    /// # Returns
+    /// `Result<(), DbError>` indicating success or validation failure.
+    pub(crate) fn validate_field_layout(fields: &[Field]) -> Result<(), DbError> {
+        // Check field alignment
+        for field in fields {
+            if field.offset % field.align != 0 {
+                return Err(DbError::DataCorruption(format!(
+                    "Field '{}' offset {} not aligned to {}",
+                    field.name, field.offset, field.align
+                )));
+            }
+        }
+
+        // Check for overlapping fields
+        let mut ranges: Vec<(usize, usize)> = fields
+            .iter()
+            .map(|f| (f.offset, f.offset + f.size))
+            .collect();
+        ranges.sort_by_key(|&(start, _)| start);
+
+        for i in 1..ranges.len() {
+            if ranges[i - 1].1 > ranges[i].0 {
+                return Err(DbError::DataCorruption(
+                    "Overlapping field ranges detected".to_string(),
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
     /// Calculates record size from field definitions.
     ///
     /// Record size is the maximum of (field offset + field size) across all fields.
@@ -196,7 +238,7 @@ impl Table {
     ///
     /// # Returns
     /// `Result<usize, DbError>` containing the calculated record size.
-    fn calculate_record_size(fields: &[Field]) -> Result<usize, DbError> {
+    pub(crate) fn calculate_record_size(fields: &[Field]) -> Result<usize, DbError> {
         let mut max_end = 0;
 
         for field in fields {
@@ -1307,19 +1349,19 @@ mod tests {
             )
         };
 
-        // Create a field with offset 100, which would require record size 108
+        // Create a field with offset 96 (aligned to 8), which would require record size 104
         // This should work since record size is calculated from max(field.offset + field.size)
         let fields = vec![Field::new(
             "data".to_string(),
             "u64".to_string(),
             u64_layout,
-            100,
+            96,
         )];
 
         let result = Table::create("test_table".to_string(), fields, Some(100));
         assert!(result.is_ok());
         let table = result.unwrap();
-        assert_eq!(table.record_size, 108); // 100 + 8
+        assert_eq!(table.record_size, 104); // 96 + 8
     }
 
     #[timeout(1000)]
