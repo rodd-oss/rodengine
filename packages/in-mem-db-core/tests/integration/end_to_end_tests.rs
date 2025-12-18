@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use ntest::timeout;
 use tempfile::tempdir;
 
 use in_mem_db_core::config::DbConfig;
@@ -16,6 +17,7 @@ use in_mem_db_core::types::TypeRegistry;
 
 /// ew_1: Full CRUD lifecycle: create table → add records → read → update → delete
 #[test]
+#[timeout(1000)]
 #[allow(unused_variables)]
 fn test_full_crud_lifecycle() {
     let temp_dir = tempdir().unwrap();
@@ -123,6 +125,7 @@ fn test_full_crud_lifecycle() {
 }
 
 /// ew_2: Concurrent read/write stress test with 100k operations
+#[timeout(5000)]
 #[test]
 fn test_concurrent_read_write_stress() {
     let temp_dir = tempdir().unwrap();
@@ -224,6 +227,7 @@ fn test_concurrent_read_write_stress() {
 
 /// ew_3: Procedure execution with parallel iteration across 1M records
 #[test]
+#[timeout(1000)]
 #[allow(unused_variables)]
 fn test_procedure_parallel_iteration_1m() {
     // This test requires procedure system to be implemented
@@ -305,6 +309,7 @@ fn test_procedure_parallel_iteration_1m() {
 }
 
 /// ew_4: Persistence and recovery simulation (crash and restart)
+#[timeout(1000)]
 #[test]
 fn test_persistence_recovery_simulation() {
     let temp_dir = tempdir().unwrap();
@@ -399,6 +404,7 @@ fn test_persistence_recovery_simulation() {
 
 /// ew_5: Performance validation against latency/throughput targets
 #[test]
+#[timeout(1000)]
 #[allow(unused_variables)]
 fn test_performance_validation() {
     // This test validates basic performance characteristics

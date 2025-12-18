@@ -9,7 +9,9 @@ use in_mem_db_core::database::Database;
 use in_mem_db_core::persistence::PersistenceManager;
 use in_mem_db_core::table::Field;
 use in_mem_db_core::types::TypeRegistry;
+use ntest::timeout;
 
+#[timeout(1000)]
 #[test]
 fn test_persistence_integration() {
     let temp_dir = tempdir().unwrap();

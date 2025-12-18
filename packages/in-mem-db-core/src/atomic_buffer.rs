@@ -342,8 +342,10 @@ impl AtomicBuffer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ntest::timeout;
 
     #[test]
+    #[timeout(1000)]
     fn test_new_buffer() {
         let buffer = AtomicBuffer::new(1024, 64);
         assert_eq!(buffer.capacity(), 1024);
@@ -353,6 +355,7 @@ mod tests {
     }
 
     #[test]
+    #[timeout(1000)]
     fn test_record_offset() {
         let buffer = AtomicBuffer::new(1024, 64);
         assert_eq!(buffer.record_offset(0), 0);
@@ -361,6 +364,7 @@ mod tests {
     }
 
     #[test]
+    #[timeout(1000)]
     fn test_load_store() {
         let buffer = AtomicBuffer::new(1024, 64);
 
@@ -375,6 +379,7 @@ mod tests {
         assert_eq!(buffer.capacity(), new_data.capacity());
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_grow() {
         let buffer = AtomicBuffer::new(1024, 64);
@@ -394,17 +399,20 @@ mod tests {
     }
 
     #[test]
+    #[timeout(1000)]
     #[should_panic(expected = "initial_capacity must be > 0")]
     fn test_new_zero_capacity() {
         AtomicBuffer::new(0, 64);
     }
 
     #[test]
+    #[timeout(1000)]
     #[should_panic(expected = "record_size must be > 0")]
     fn test_new_zero_record_size() {
         AtomicBuffer::new(1024, 0);
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_as_ptr() {
         let buffer = AtomicBuffer::new(1024, 64);
@@ -417,6 +425,7 @@ mod tests {
         assert_eq!(arc.len(), 0); // Buffer is empty initially
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_ptr_at_offset() {
         let buffer = AtomicBuffer::new(1024, 64);
@@ -442,6 +451,7 @@ mod tests {
         assert!(buffer.ptr_at_offset(100).is_err());
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_record_ptr() {
         let buffer = AtomicBuffer::new(1024, 64);
@@ -468,6 +478,7 @@ mod tests {
         assert!(buffer.record_ptr(2).is_err()); // Only 2 records (0 and 1)
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_slice() {
         let buffer = AtomicBuffer::new(1024, 64);
@@ -489,6 +500,7 @@ mod tests {
         assert!(buffer.slice(0..100).is_err()); // end out of bounds
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_record_slice() {
         let buffer = AtomicBuffer::new(1024, 64);

@@ -118,6 +118,8 @@ pub struct ProcedureCall {
     pub params: serde_json::Value,
     /// Transaction handle for procedure isolation
     pub tx_handle: in_mem_db_core::transaction::TransactionHandle,
+    /// Response sender to send result back to API caller
+    pub response: Option<ResponseSender>,
 }
 
 /// Runtime tick phases
@@ -348,7 +350,8 @@ impl Runtime {
                 break;
             }
 
-            self.run_procedure(call)?;
+            // Run procedure - errors are sent through response channel
+            let _ = self.run_procedure(call);
             processed_count += 1;
         }
 
@@ -379,6 +382,10 @@ impl Runtime {
             .map(|call| {
                 // Check time budget before starting each procedure
                 if start_time.elapsed() > time_budget {
+                    // Send timeout error through response channel
+                    if let Some(response) = call.response {
+                        let _ = response.send(Err(DbError::Timeout));
+                    }
                     return Err(DbError::Timeout);
                 }
 
@@ -429,16 +436,22 @@ impl Runtime {
         // Validate parameters against schema (if any)
         if let Err(e) = registry.validate_params(&call.name, &call.params) {
             tracing::error!("Procedure {} parameter validation failed: {}", call.name, e);
+            // Send error response if channel exists
+            if let Some(response) = call.response {
+                let _ = response.send(Err(e.clone()));
+            }
             return Err(e);
         }
 
         // Look up procedure in registry
         let Some(proc_fn) = registry.get(&call.name) else {
-            tracing::error!("Procedure not found: {}", call.name);
-            return Err(DbError::ProcedurePanic(format!(
-                "Procedure not found: {}",
-                call.name
-            )));
+            let error = DbError::ProcedurePanic(format!("Procedure not found: {}", call.name));
+            tracing::error!("{}", error);
+            // Send error response if channel exists
+            if let Some(response) = call.response {
+                let _ = response.send(Err(error.clone()));
+            }
+            return Err(error);
         };
 
         // Execute procedure with panic catching
@@ -446,8 +459,8 @@ impl Runtime {
             proc_fn(db, &mut call.tx_handle, call.params)
         }));
 
-        match result {
-            Ok(Ok(_)) => {
+        let procedure_result = match result {
+            Ok(Ok(proc_result)) => {
                 // Procedure succeeded, commit the transaction
                 match db.commit_transaction(&mut call.tx_handle) {
                     Ok(()) => {
@@ -455,7 +468,7 @@ impl Runtime {
                             "Procedure {} completed and committed successfully",
                             call.name
                         );
-                        Ok(())
+                        Ok(proc_result)
                     }
                     Err(e) => {
                         tracing::error!("Procedure {} commit failed: {}", call.name, e);
@@ -480,7 +493,15 @@ impl Runtime {
                 // Transaction will be aborted automatically when tx_handle drops
                 Err(DbError::ProcedurePanic(panic_msg))
             }
+        };
+
+        // Send result back through response channel if it exists
+        if let Some(response) = call.response {
+            let _ = response.send(procedure_result);
         }
+
+        // Return Ok(()) to indicate procedure was processed (not necessarily successful)
+        Ok(())
     }
 
     /// Process persistence phase (20% of tick)
@@ -656,21 +677,15 @@ impl Runtime {
                 // Create a transaction handle for procedure isolation
                 let tx_handle = in_mem_db_core::transaction::TransactionHandle::new();
 
-                // Create procedure call and add to queue
+                // Create procedure call with response channel
                 let call = ProcedureCall {
                     name,
                     params,
                     tx_handle,
+                    response: Some(response),
                 };
 
                 self.procedure_queue.push_back(call);
-
-                // Send immediate response indicating queued status
-                let result = Ok(serde_json::json!({
-                    "status": "queued",
-                    "message": "Procedure queued for execution"
-                }));
-                let _ = response.send(result);
                 Ok(())
             }
         }

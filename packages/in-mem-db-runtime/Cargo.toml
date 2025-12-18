@@ -25,3 +25,4 @@ hex = "0.4.3"
 parking_lot = "0.12.5"
 
 [dev-dependencies]
+ntest = "0.9.5"

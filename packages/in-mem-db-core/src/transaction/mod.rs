@@ -513,6 +513,7 @@ mod tests {
     use super::*;
     use crate::table::{Field, Table};
     use crate::types::TypeLayout;
+    use ntest::timeout;
 
     fn create_test_table() -> Table {
         // Create mock layouts for testing
@@ -548,6 +549,7 @@ mod tests {
         Table::create("test_table".to_string(), fields, Some(100)).unwrap()
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_staging_buffer_new() {
         let table = create_test_table();
@@ -560,6 +562,7 @@ mod tests {
         assert_eq!(staging_buffer.record_count(), 0);
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_staging_buffer_stage_create() {
         let table = create_test_table();
@@ -585,6 +588,7 @@ mod tests {
         }
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_staging_buffer_stage_create_invalid_size() {
         let table = create_test_table();
@@ -595,6 +599,7 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_staging_buffer_stage_update() {
         let table = create_test_table();
@@ -623,6 +628,7 @@ mod tests {
         }
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_staging_buffer_stage_update_invalid_offset() {
         let table = create_test_table();
@@ -633,6 +639,7 @@ mod tests {
         assert!(result.is_err()); // Buffer is empty, offset 0 is out of bounds
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_staging_buffer_stage_delete() {
         let table = create_test_table();
@@ -656,6 +663,7 @@ mod tests {
         }
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_staging_buffer_record_offset() {
         let table = create_test_table();
@@ -666,6 +674,7 @@ mod tests {
         assert_eq!(staging_buffer.record_offset(10), 80);
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_transaction_new() {
         let transaction = Transaction::new();
@@ -676,6 +685,7 @@ mod tests {
         assert_eq!(transaction.staged_table_count(), 0);
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_transaction_get_or_create_staging_buffer() {
         let table = create_test_table();
@@ -691,6 +701,7 @@ mod tests {
         assert_eq!(transaction.staged_table_count(), 1); // Still only one table
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_transaction_stage_operations() {
         let table = create_test_table();
@@ -714,6 +725,7 @@ mod tests {
         assert!(transaction.has_staged_changes());
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_transaction_commit() {
         let table = create_test_table();
@@ -734,6 +746,7 @@ mod tests {
         assert!(!transaction.is_active());
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_transaction_commit_twice() {
         let table = create_test_table();
@@ -753,6 +766,7 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_transaction_abort() {
         let table = create_test_table();
@@ -772,6 +786,7 @@ mod tests {
         assert!(!transaction.has_staged_changes());
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_transaction_handle_new() {
         let handle = TransactionHandle::new();
@@ -780,6 +795,7 @@ mod tests {
         assert!(!handle.is_aborted());
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_transaction_handle_commit() {
         let table = create_test_table();
@@ -797,6 +813,7 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_transaction_handle_abort() {
         let table = create_test_table();
@@ -810,6 +827,7 @@ mod tests {
         // handle is consumed by abort(), so we can't assert on it
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_transaction_handle_auto_abort() {
         let table = create_test_table();
@@ -835,6 +853,7 @@ mod tests {
         assert_eq!(staged_changes_after, 0);
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_transaction_sorted_commit_order() {
         // Create multiple tables

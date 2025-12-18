@@ -281,11 +281,12 @@ feature_end_to_end_workflow_start
 [x] task_ew_5: Performance validation against latency/throughput targets
 feature_end_to_end_workflow_end
 feature_failure_modes_start
-[] task_fm_1: Procedure panic recovery without data corruption
-[] task_fm_2: Disk full persistence error handling
+[x] task_fm_1: Procedure panic recovery without data corruption
+[x] task_fm_2: Add [#timeout] for each test
 [] task_fm_3: Schema corruption detection and graceful shutdown
 [] task_fm_4: Memory pressure handling with buffer growth limits
 [] task_fm_5: Network timeout handling for API requests
+[] task_fm_6: Disk full persistence error handling
 feature_failure_modes_end
 feature_performance_regression_start
 [] task_perf_1: Baseline throughput: >10M reads/sec/core
@@ -298,7 +299,7 @@ phase_integration_end
 phase_robustness_hardening_start
 feature_api_completeness_start
 [] task_ap_1: Add GET /tables endpoint to list all tables
-[] task_ap_2: Add GET /tables/{name}/records endpoint with query parameters  
+[] task_ap_2: Add GET /tables/{name}/records endpoint with query parameters
 [] task_ap_3: Implement proper HTTP status codes (400 for client errors, 201 for creation)
 [] task_ap_4: Add missing API documentation for all endpoints
 [] task_ap_5: Ensure consistent response formats across all endpoints
@@ -340,8 +341,8 @@ feature_buffer_growth_race_fix_start
 [] task_bg_5: Add metrics for buffer growth events and contention
 feature_buffer_growth_race_fix_end
 feature_parallel_execution_consistency_start
-[] task_pe_1: Align parallel procedure timeout handling with sequential behavior
-[] task_pe_2: Ensure timed-out procedures are requeued in parallel execution
+[] task_pe_1: Align sequential procedure timeout handling with parallel behavior (send timeout errors through response channels, ensure consistent error handling)
+[] task_pe_2: Ensure timed-out procedures are requeued in parallel execution (clear response channel before requeuing to avoid double responses)
 [] task_pe_3: Fix queue capacity calculation overflow with checked_mul()
 [] task_pe_4: Make string field size configurable or schema-derived
 [] task_pe_5: Add tests for parallel execution edge cases
@@ -365,7 +366,7 @@ feature_code_cleanup_start
 [] task_cc_2: Remove empty middleware/ module or implement middleware
 [] task_cc_3: Replace println!/eprintln! with tracing macros in API server
 [] task_cc_4: Remove duplicate align_offset function
-[] task_cc_5: Clean up unused imports and dead code
+[] task_cc_5: Clean up unused imports, dead code, and fix inconsistent field offset comments
 feature_code_cleanup_end
 phase_robustness_hardening_end
 backlog_end

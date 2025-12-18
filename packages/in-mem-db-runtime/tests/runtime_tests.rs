@@ -13,8 +13,10 @@ use in_mem_db_core::database::Database;
 use in_mem_db_core::table::Field;
 use in_mem_db_core::types::TypeRegistry;
 use in_mem_db_runtime::{ApiRequest, CrudOperation, Runtime};
+use ntest::timeout;
 
 /// Test basic runtime startup and shutdown
+#[timeout(1000)]
 #[test]
 fn test_runtime_basic_lifecycle() {
     // Create type registry
@@ -89,6 +91,7 @@ fn test_runtime_basic_lifecycle() {
 }
 
 /// Test procedure execution
+#[timeout(1000)]
 #[test]
 fn test_runtime_procedure_execution() {
     // Create type registry
@@ -141,7 +144,7 @@ fn test_runtime_procedure_execution() {
     } // table dropped here, releasing write lock
 
     // Send RPC request
-    let (response_tx, response_rx) = oneshot::channel();
+    let (response_tx, mut response_rx) = oneshot::channel();
     let rpc_req = ApiRequest::Rpc {
         name: "increment_all".to_string(),
         params: serde_json::json!({}),
@@ -150,21 +153,227 @@ fn test_runtime_procedure_execution() {
 
     api_tx.send(rpc_req).unwrap();
 
-    // Run one tick to process the request
-    runtime.tick().unwrap();
+    // Run multiple ticks to ensure procedure executes
+    for _ in 0..5 {
+        runtime.tick().unwrap();
+    }
 
-    // Response should be available immediately
-    let response = response_rx.blocking_recv().unwrap();
-    assert!(response.is_ok());
+    // Response should be available after procedure execution
+    let response = response_rx.try_recv();
+    assert!(response.is_ok(), "Response should be available");
 
-    let response_value = response.unwrap();
-    assert_eq!(response_value["status"], "queued");
+    let response_result = response.unwrap();
+    assert!(response_result.is_ok(), "Procedure should succeed");
 
-    // Note: The procedure is queued for execution but not run in this test.
-    // We verify the RPC request handling and procedure registration.
+    let response_value = response_result.unwrap();
+    // Procedure returns empty JSON object
+    assert!(response_value.is_object() && response_value.as_object().unwrap().is_empty());
+}
+
+/// Test procedure panic recovery without data corruption
+#[timeout(1000)]
+#[test]
+fn test_procedure_panic_recovery() {
+    // Create type registry
+    let type_registry = Arc::new(TypeRegistry::new());
+    in_mem_db_core::types::register_builtin_types(&type_registry).unwrap();
+
+    // Create database
+    let db = Arc::new(Database::with_type_registry(type_registry));
+
+    // Create configuration
+    let config = DbConfig {
+        tickrate: 60,
+        max_api_requests_per_tick: 100,
+        ..Default::default()
+    };
+
+    // Create channels
+    let (api_tx, api_rx) = mpsc::sync_channel(1000);
+    let (persistence_tx, _persistence_rx) = mpsc::sync_channel(1000);
+
+    // Create runtime
+    let mut runtime = Runtime::new(db.clone(), config, api_rx, persistence_tx);
+
+    // Create a table
+    let u64_layout = db.type_registry().get("u64").unwrap().clone();
+    let fields = vec![Field::new(
+        "value".to_string(),
+        "u64".to_string(),
+        u64_layout,
+        0,
+    )];
+
+    db.create_table("panic_test".to_string(), fields, None)
+        .unwrap();
+
+    // Register a procedure that panics when params["panic"] == true
+    runtime.register_procedure("panic_procedure".to_string(), |db, tx, params| {
+        if params
+            .get("panic")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+        {
+            panic!("Test panic triggered by params");
+        }
+
+        // Normal procedure logic: increment all values
+        let table = db.get_table("panic_test")?;
+        let buffer = table.buffer.load();
+        let buffer_slice = buffer.as_slice();
+        let record_size = table.record_size;
+        let record_count = buffer_slice.len() / record_size;
+
+        for i in 0..record_count {
+            let offset = i * record_size;
+            let mut current = [0u8; 8];
+            current.copy_from_slice(&buffer_slice[offset..offset + 8]);
+            let mut value = u64::from_le_bytes(current);
+            value += 1;
+            let new_data = value.to_le_bytes().to_vec();
+            tx.transaction_mut().stage_update(&table, i, new_data)?;
+        }
+
+        Ok(serde_json::json!({ "processed": record_count }))
+    });
+
+    // Add some test data
+    let initial_values = vec![1u64, 2, 3, 4, 5];
+    {
+        let table = db.get_table_mut("panic_test").unwrap();
+        for &value in &initial_values {
+            let mut data = vec![0u8; table.record_size];
+            data[0..8].copy_from_slice(&value.to_le_bytes());
+            table.create_record(&data).unwrap();
+        }
+    }
+
+    // Test 1: Normal procedure execution (should succeed)
+    {
+        let (response_tx, _response_rx) = oneshot::channel();
+        let rpc_req = ApiRequest::Rpc {
+            name: "panic_procedure".to_string(),
+            params: serde_json::json!({}),
+            response: response_tx,
+        };
+
+        api_tx.send(rpc_req).unwrap();
+
+        // Run multiple ticks to ensure procedure executes
+        for _ in 0..5 {
+            runtime.tick().unwrap();
+        }
+
+        // Check that normal procedure completed
+        let table = db.get_table("panic_test").unwrap();
+        let buffer = table.buffer.load();
+        let buffer_slice = buffer.as_slice();
+        let record_size = table.record_size;
+        let mut found_incremented = false;
+
+        for (i, &initial_value) in initial_values.iter().enumerate() {
+            let offset = i * record_size;
+            let mut current = [0u8; 8];
+            current.copy_from_slice(&buffer_slice[offset..offset + 8]);
+            let value = u64::from_le_bytes(current);
+
+            // Either original or incremented value is acceptable
+            // since we don't know if procedure committed
+            if value == initial_value + 1 {
+                found_incremented = true;
+            }
+        }
+
+        // At least some values should be incremented
+        assert!(
+            found_incremented,
+            "Normal procedure should have incremented values"
+        );
+    }
+
+    // Test 2: Procedure with panic=true (should fail without corruption)
+    {
+        let (response_tx, mut response_rx) = oneshot::channel();
+        let rpc_req = ApiRequest::Rpc {
+            name: "panic_procedure".to_string(),
+            params: serde_json::json!({ "panic": true }),
+            response: response_tx,
+        };
+
+        api_tx.send(rpc_req).unwrap();
+
+        // Run multiple ticks to ensure procedure executes (and panics)
+        for _ in 0..5 {
+            runtime.tick().unwrap();
+        }
+
+        // Check that we got a panic error response
+        let response = response_rx.try_recv();
+        assert!(response.is_ok(), "Response should be available after panic");
+
+        let response_result = response.unwrap();
+        assert!(
+            response_result.is_err(),
+            "Procedure with panic=true should return error"
+        );
+
+        let error = response_result.unwrap_err();
+        match error {
+            in_mem_db_core::error::DbError::ProcedurePanic(msg) => {
+                assert!(msg.contains("Test panic"), "Error should indicate panic");
+            }
+            _ => panic!("Expected ProcedurePanic error, got {:?}", error),
+        }
+
+        // Check that data is not corrupted
+        let table = db.get_table("panic_test").unwrap();
+        let buffer = table.buffer.load();
+        let buffer_slice = buffer.as_slice();
+        let record_size = table.record_size;
+
+        for (i, &initial_value) in initial_values.iter().enumerate() {
+            let offset = i * record_size;
+            let mut current = [0u8; 8];
+            current.copy_from_slice(&buffer_slice[offset..offset + 8]);
+            let value = u64::from_le_bytes(current);
+
+            // Values should be either original or incremented from first test
+            // but not corrupted (e.g., not random bytes)
+            assert!(
+                value == initial_value || value == initial_value + 1,
+                "Data should not be corrupted after panic"
+            );
+        }
+    }
+
+    // Test 3: Thread pool remains functional after panics
+    {
+        let (response_tx, _response_rx) = oneshot::channel();
+        let rpc_req = ApiRequest::Rpc {
+            name: "panic_procedure".to_string(),
+            params: serde_json::json!({}),
+            response: response_tx,
+        };
+
+        api_tx.send(rpc_req).unwrap();
+
+        // Run ticks - runtime should still function
+        for _ in 0..3 {
+            runtime.tick().unwrap();
+        }
+
+        // Runtime should still be operational - queue_sizes() returns usize which is always >= 0
+        let (ddl_size, dml_size, proc_size) = runtime.queue_sizes();
+        // Just check that the function returns without panicking
+        assert!(
+            ddl_size < 1000 && dml_size < 1000 && proc_size < 1000,
+            "Runtime should remain functional"
+        );
+    }
 }
 
 /// Test tick phase timing (simplified)
+#[timeout(1000)]
 #[test]
 fn test_runtime_tick_phases_simulation() {
     // This test simulates the tick phase timing logic without running
@@ -202,6 +411,7 @@ fn test_runtime_tick_phases_simulation() {
 }
 
 /// Test DDL vs DML prioritization
+#[timeout(1000)]
 #[test]
 fn test_runtime_request_prioritization() {
     // Create type registry

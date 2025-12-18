@@ -9,7 +9,9 @@ use crate::database::Database;
 use crate::persistence::PersistenceManager;
 use crate::table::Field;
 use crate::types::TypeRegistry;
+use ntest::timeout;
 
+#[timeout(1000)]
 #[test]
 fn test_save_and_load_schema() {
     let temp_dir = tempdir().unwrap();
@@ -72,6 +74,7 @@ fn test_save_and_load_schema() {
     assert_eq!(table.fields[1].type_id, "string");
 }
 
+#[timeout(1000)]
 #[test]
 fn test_flush_and_load_table_data() {
     let temp_dir = tempdir().unwrap();
@@ -143,6 +146,7 @@ fn test_flush_and_load_table_data() {
     assert_eq!(table2.current_next_id(), 2); // next_id should be restored to max id + 1
 }
 
+#[timeout(1000)]
 #[test]
 fn test_atomic_rename_schema() {
     let temp_dir = tempdir().unwrap();
@@ -199,6 +203,7 @@ fn test_atomic_rename_schema() {
     }
 }
 
+#[timeout(1000)]
 #[test]
 fn test_flush_all_tables() {
     let temp_dir = tempdir().unwrap();
@@ -267,6 +272,7 @@ fn test_flush_all_tables() {
     assert_eq!(table2_data.len(), 8); // 1 record * 8 bytes
 }
 
+#[timeout(1000)]
 #[test]
 fn test_custom_types_persistence() {
     let temp_dir = tempdir().unwrap();
@@ -360,6 +366,7 @@ fn test_custom_types_persistence() {
     assert_eq!(table.fields[1].type_id, "3xf32");
 }
 
+#[timeout(1000)]
 #[test]
 fn test_corruption_detection_with_checksums() {
     let temp_dir = tempdir().unwrap();

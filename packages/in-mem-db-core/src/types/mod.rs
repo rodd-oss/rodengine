@@ -730,7 +730,9 @@ fn register_numeric_type<T: Copy + 'static>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ntest::timeout;
 
+    #[timeout(1000)]
     #[test]
     fn test_type_layout_validation() {
         // Valid layout
@@ -777,6 +779,7 @@ mod tests {
         assert!(layout.validate().is_err());
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_type_registry_basic() {
         let registry = TypeRegistry::new();
@@ -835,6 +838,7 @@ mod tests {
         assert!(!registry.remove("custom")); // Already removed
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_builtin_types_registration() {
         let registry = TypeRegistry::new();
@@ -869,6 +873,7 @@ mod tests {
         assert!(!string_layout.pod); // String is not POD
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_serialization_deserialization() {
         let registry = TypeRegistry::new();
@@ -927,6 +932,7 @@ mod tests {
         }
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_custom_type_registration() {
         let registry = TypeRegistry::new();
@@ -974,6 +980,7 @@ mod tests {
         assert_eq!(layout.align, 4);
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_validate_type() {
         let registry = TypeRegistry::new();

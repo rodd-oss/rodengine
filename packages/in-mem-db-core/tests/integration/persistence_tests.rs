@@ -5,6 +5,7 @@
 //! 6.2: Schema Persistence and Recovery test  
 //! 6.3: Parallel Persistence with Active Writes test
 
+use ntest::timeout;
 use std::fs;
 use std::sync::Arc;
 use std::thread;
@@ -20,6 +21,7 @@ use in_mem_db_core::types::TypeRegistry;
 /// Test 6.1: Async Data Flush Integrity
 ///
 /// Tests that data flushes happen atomically and can survive process crashes.
+#[timeout(5000)]
 #[test]
 fn test_async_persistence_atomicity() {
     let temp_dir = tempdir().unwrap();
@@ -51,14 +53,19 @@ fn test_async_persistence_atomicity() {
     db.create_table("test_table".to_string(), fields, None)
         .unwrap();
 
-    // Get table and perform rapid writes
-    let table = db.get_table_mut("test_table").unwrap();
-
     // Perform 100 rapid writes
     for i in 0..100 {
+        let table = db.get_table_mut("test_table").unwrap();
         let mut data = vec![0u8; table.record_size];
         data[0..8].copy_from_slice(&(i as u64).to_le_bytes());
         table.create_record(&data).unwrap();
+        // Drop mutable reference to allow persistence tick to acquire read lock
+        drop(table);
+
+        // Tick every 10 writes
+        if i % 10 == 0 {
+            persistence.tick(&db).unwrap();
+        }
     }
 
     // Wait for 6 ticks (should trigger flush since interval is 5)
@@ -66,12 +73,16 @@ fn test_async_persistence_atomicity() {
         persistence.tick(&db).unwrap();
     }
 
+    // Save schema before trying to load it
+    persistence.save_schema(&db).unwrap();
+
     // Verify data file exists and size matches buffer length
     let data_path = temp_dir.path().join("data").join("test_table.bin");
     assert!(data_path.exists());
 
     // Load the data file and verify contents
     let file_data = fs::read(&data_path).unwrap();
+    let table = db.get_table("test_table").unwrap();
     let buffer = table.buffer.load();
     assert_eq!(file_data.len(), buffer.len());
 
@@ -110,6 +121,7 @@ fn test_async_persistence_atomicity() {
 /// Test 6.2: Schema Persistence and Recovery with Custom Types
 ///
 /// Tests that custom types are properly persisted and recovered.
+#[timeout(1000)]
 #[test]
 fn test_schema_persistence_recovery() {
     let temp_dir = tempdir().unwrap();
@@ -247,6 +259,7 @@ fn test_schema_persistence_recovery() {
 /// Test 6.3: Parallel Persistence with Active Writes
 ///
 /// Tests that persistence works correctly during concurrent write bursts.
+#[timeout(3000)]
 #[test]
 fn test_persistence_during_write_burst() {
     let temp_dir = tempdir().unwrap();

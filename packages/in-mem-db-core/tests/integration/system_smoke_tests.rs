@@ -2,6 +2,7 @@
 //!
 //! End-to-end tests that verify the system works as a whole.
 
+use ntest::timeout;
 use std::fs;
 use std::sync::Arc;
 use std::thread;
@@ -15,6 +16,7 @@ use in_mem_db_core::table::Field;
 use in_mem_db_core::types::TypeRegistry;
 
 /// Basic smoke test: create table, add records, read, update, delete
+#[timeout(5000)]
 #[test]
 fn test_basic_crud_smoke() {
     let temp_dir = tempdir().unwrap();
@@ -38,16 +40,15 @@ fn test_basic_crud_smoke() {
     let fields = vec![
         Field::new("id".to_string(), "u64".to_string(), u64_layout.clone(), 0),
         Field::new("name".to_string(), "string".to_string(), string_layout, 8),
-        Field::new("active".to_string(), "bool".to_string(), bool_layout, 264), // 8 + 256
+        Field::new("active".to_string(), "bool".to_string(), bool_layout, 268), // 8 + 260
     ];
 
     db.create_table("users".to_string(), fields, None).unwrap();
 
-    // Get table
-    let table = db.get_table_mut("users").unwrap();
-    assert_eq!(table.record_size, 265); // 8 + 256 + 1
-
     // Create records
+    let table = db.get_table_mut("users").unwrap();
+    assert_eq!(table.record_size, 269); // 8 + 260 + 1
+
     for i in 1..=5 {
         let mut data = vec![0u8; table.record_size];
 
@@ -62,7 +63,7 @@ fn test_basic_crud_smoke() {
         data[12..12 + name_bytes.len()].copy_from_slice(name_bytes);
 
         // Set active flag (true for odd, false for even)
-        data[264] = if i % 2 == 1 { 1 } else { 0 };
+        data[268] = if i % 2 == 1 { 1 } else { 0 };
 
         table.create_record(&data).unwrap();
     }
@@ -88,7 +89,7 @@ fn test_basic_crud_smoke() {
         assert_eq!(name, format!("User {}", i + 1));
 
         // Verify active flag
-        let active = record_bytes[264];
+        let active = record_bytes[268];
         assert_eq!(active, if (i + 1) % 2 == 1 { 1 } else { 0 });
     }
 
@@ -97,7 +98,7 @@ fn test_basic_crud_smoke() {
     update_data[0..8].copy_from_slice(&3u64.to_le_bytes()); // id = 3
     update_data[8..12].copy_from_slice(&(7u32.to_le_bytes())); // name length = 7
     update_data[12..19].copy_from_slice(b"Updated"); // name = "Updated"
-    update_data[264] = 0; // active = false
+    update_data[268] = 0; // active = false
 
     table.update_record(2, &update_data).unwrap(); // index 2 = id 3
 
@@ -106,18 +107,22 @@ fn test_basic_crud_smoke() {
     let updated_len = u32::from_le_bytes(updated_record[8..12].try_into().unwrap()) as usize;
     let updated_name = String::from_utf8_lossy(&updated_record[12..12 + updated_len]);
     assert_eq!(updated_name, "Updated");
-    assert_eq!(updated_record[264], 0);
+    assert_eq!(updated_record[268], 0);
 
     // Delete a record (soft delete)
-    table.delete_record(1, "smoke_test").unwrap(); // index 1 = id 2
+    table.delete_record(1, "active").unwrap(); // index 1 = id 2
 
     // Verify delete (record should be marked deleted)
     // Note: actual delete implementation may vary
     assert_eq!(table.record_count(), 5); // Count may or may not change with soft delete
 
+    // Drop mutable table reference before persistence operations
+    drop(table);
+
     // Test persistence
     let persistence = PersistenceManager::new(&config);
     persistence.save_schema(&db).unwrap();
+    let table = db.get_table("users").unwrap();
     persistence.flush_table_data(&table).unwrap();
 
     // Verify files exist
@@ -134,6 +139,7 @@ fn test_basic_crud_smoke() {
 
 /// Test concurrent read/write operations
 #[test]
+#[timeout(1000)]
 #[allow(unused_variables)]
 fn test_concurrent_operations_smoke() {
     let temp_dir = tempdir().unwrap();
@@ -232,6 +238,7 @@ fn test_concurrent_operations_smoke() {
 }
 
 /// Test persistence and recovery
+#[timeout(5000)]
 #[test]
 fn test_persistence_recovery_smoke() {
     let temp_dir = tempdir().unwrap();
@@ -269,9 +276,8 @@ fn test_persistence_recovery_smoke() {
             .unwrap();
 
         // Add data
-        let table = db.get_table_mut("entities").unwrap();
-
         for i in 1..=10 {
+            let table = db.get_table_mut("entities").unwrap();
             let mut data = vec![0u8; table.record_size];
 
             // Set id
@@ -292,6 +298,7 @@ fn test_persistence_recovery_smoke() {
         // Persist
         let persistence = PersistenceManager::new(&config);
         persistence.save_schema(&db).unwrap();
+        let table = db.get_table("entities").unwrap();
         persistence.flush_table_data(&table).unwrap();
 
         // Verify files
@@ -353,6 +360,7 @@ fn test_persistence_recovery_smoke() {
 
 /// Test error handling and edge cases
 #[test]
+#[timeout(1000)]
 #[allow(unused_variables)]
 fn test_error_handling_smoke() {
     let temp_dir = tempdir().unwrap();
@@ -432,6 +440,7 @@ fn test_error_handling_smoke() {
 }
 
 /// Test memory usage and cleanup
+#[timeout(1000)]
 #[test]
 fn test_memory_cleanup_smoke() {
     // This test verifies that memory is properly cleaned up

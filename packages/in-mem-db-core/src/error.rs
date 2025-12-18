@@ -3,7 +3,7 @@
 use thiserror::Error;
 
 /// Database operation errors.
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Clone)]
 pub enum DbError {
     /// Table not found
     #[error("Table '{table}' not found")]

@@ -1082,6 +1082,7 @@ fn align_offset(offset: usize, align: usize) -> usize {
 mod tests {
     use super::*;
     use crate::types::{TypeLayout, TypeRegistry};
+    use ntest::timeout;
 
     fn create_test_fields() -> Vec<Field> {
         // Create a mock type registry with test layouts
@@ -1186,6 +1187,7 @@ mod tests {
         ]
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_table_create() {
         let fields = create_test_fields();
@@ -1201,6 +1203,7 @@ mod tests {
         assert_eq!(table.buffer.capacity(), 26900);
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_field_offset() {
         let fields = create_test_fields();
@@ -1213,6 +1216,7 @@ mod tests {
         assert!(table.field_offset("nonexistent").is_err());
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_next_id() {
         let fields = create_test_fields();
@@ -1224,6 +1228,7 @@ mod tests {
         assert_eq!(table.current_next_id(), 4);
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_record_offset() {
         let fields = create_test_fields();
@@ -1234,6 +1239,7 @@ mod tests {
         assert_eq!(table.record_offset(10), 2690);
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_duplicate_field_names() {
         let _registry = TypeRegistry::new();
@@ -1275,6 +1281,7 @@ mod tests {
         }
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_field_exceeds_record_size() {
         let _registry = TypeRegistry::new();
@@ -1315,6 +1322,7 @@ mod tests {
         assert_eq!(table.record_size, 108); // 100 + 8
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_relations() {
         let fields = create_test_fields();
@@ -1335,6 +1343,7 @@ mod tests {
         assert!(!table.remove_relation("nonexistent"));
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_get_field() {
         let fields = create_test_fields();
@@ -1346,6 +1355,7 @@ mod tests {
         assert!(table.get_field("nonexistent").is_none());
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_add_field() {
         let fields = create_test_fields();
@@ -1407,6 +1417,7 @@ mod tests {
         }
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_remove_field() {
         let fields = create_test_fields();
@@ -1445,6 +1456,7 @@ mod tests {
         }
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_add_field_with_alignment() {
         let _registry = TypeRegistry::new();
@@ -1512,6 +1524,7 @@ mod tests {
         assert_eq!(table.record_size, 16); // 8 + 8 = 16
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_field_type_validation() {
         let fields = create_test_fields();
@@ -1552,6 +1565,7 @@ mod tests {
         }
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_read_record_raw() {
         let fields = create_test_fields();
@@ -1564,6 +1578,7 @@ mod tests {
         // This test verifies the method exists and returns error for empty buffer
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_read_field_raw() {
         let fields = create_test_fields();
@@ -1574,6 +1589,7 @@ mod tests {
         assert!(table.read_field_raw(0, "nonexistent").is_err());
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_concurrent_read_access() {
         use std::sync::Arc;
@@ -1606,6 +1622,7 @@ mod tests {
         // ArcSwap epoch tracking ensures old buffers dropped after last reader
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_multiple_readers_same_buffer() {
         use std::sync::Arc;
@@ -1659,6 +1676,7 @@ mod tests {
         // All threads successfully accessed the same buffer concurrently
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_create_record() {
         let fields = create_test_fields();
@@ -1693,6 +1711,7 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_update_record() {
         let fields = create_test_fields();
@@ -1731,6 +1750,7 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_partial_update() {
         let fields = create_test_fields();
@@ -1773,6 +1793,7 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_delete_and_compact_records() {
         let fields = create_test_fields();
@@ -1821,6 +1842,7 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_concurrent_writers_last_writer_wins() {
         use std::sync::Arc;
@@ -1874,6 +1896,7 @@ mod tests {
         assert!(slice[268] == 0 || slice[268] == 1);
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_failed_write_discards_buffer() {
         let fields = create_test_fields();
@@ -1911,6 +1934,7 @@ mod tests {
         assert_eq!(table.buffer.len(), initial_len); // Same length, different content
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_load_full_clones_buffer() {
         let buffer = AtomicBuffer::new(1024, 64);
@@ -1943,6 +1967,7 @@ mod tests {
         assert_eq!(read_arc3.as_slice(), &[1u8, 2, 3, 4, 5, 6, 7]);
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_create_record_from_values() {
         let fields = create_test_fields();
@@ -1990,6 +2015,7 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[timeout(1000)]
     #[test]
     fn test_read_record() {
         let fields = create_test_fields();

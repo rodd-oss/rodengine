@@ -28,6 +28,7 @@ memmap2 = { workspace = true, optional = true }
 anyhow.workspace = true
 tempfile.workspace = true
 criterion = { workspace = true }
+ntest = "0.9.5"
 
 [[bench]]
 name = "mmap_benchmark"
