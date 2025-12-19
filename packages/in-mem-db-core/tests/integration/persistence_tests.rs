@@ -525,3 +525,149 @@ fn test_schema_corruption_detection() {
 
     println!("All schema corruption detection tests passed");
 }
+
+/// Test 9.2: Persistence Write Failure (Disk Full Error Handling)
+///
+/// Tests that disk full errors are properly handled and retried.
+#[timeout(5000)]
+#[test]
+fn test_persistence_io_error_handling() {
+    use in_mem_db_core::error::DbError;
+    use in_mem_db_core::persistence;
+
+    let temp_dir = tempdir().unwrap();
+    let config = DbConfig {
+        data_dir: temp_dir.path().to_path_buf(),
+        persistence_max_retries: 2,
+        persistence_retry_delay_ms: 10, // Short delay for test
+        ..Default::default()
+    };
+
+    // Create persistence manager
+    let persistence = PersistenceManager::new(&config);
+
+    // Create type registry
+    let type_registry = Arc::new(TypeRegistry::new());
+    in_mem_db_core::types::register_builtin_types(&type_registry).unwrap();
+
+    // Create database
+    let db = Database::with_type_registry(type_registry);
+
+    // Create a table
+    let u64_layout = db.type_registry().get("u64").unwrap().clone();
+    let fields = vec![Field::new(
+        "value".to_string(),
+        "u64".to_string(),
+        u64_layout.clone(),
+        0,
+    )];
+
+    db.create_table("test_table".to_string(), fields, None, usize::MAX)
+        .unwrap();
+
+    // Test 1: Normal flush should succeed
+    {
+        let table = db.get_table("test_table").unwrap();
+        let result = persistence.flush_table_data(&table);
+        assert!(result.is_ok(), "Normal flush should succeed");
+    }
+
+    // Test error classification
+    use std::io::ErrorKind;
+
+    // Simulate different I/O errors and verify classification
+    let test_cases = vec![
+        (ErrorKind::StorageFull, DbError::DiskFull("".to_string())),
+        (ErrorKind::OutOfMemory, DbError::DiskFull("".to_string())),
+        (
+            ErrorKind::WouldBlock,
+            DbError::TransientIoError("".to_string()),
+        ),
+        (
+            ErrorKind::TimedOut,
+            DbError::TransientIoError("".to_string()),
+        ),
+        (
+            ErrorKind::Interrupted,
+            DbError::TransientIoError("".to_string()),
+        ),
+        (ErrorKind::NotFound, DbError::IoError("".to_string())),
+        (
+            ErrorKind::PermissionDenied,
+            DbError::IoError("".to_string()),
+        ),
+    ];
+
+    for (error_kind, expected_error_type) in test_cases {
+        let io_error = std::io::Error::new(error_kind, "test error");
+        let classified = persistence::classify_io_error(io_error, "test");
+
+        // Check error type matches
+        match (&classified, &expected_error_type) {
+            (DbError::DiskFull(_), DbError::DiskFull(_)) => (),
+            (DbError::TransientIoError(_), DbError::TransientIoError(_)) => (),
+            (DbError::IoError(_), DbError::IoError(_)) => (),
+            _ => panic!(
+                "Error classification mismatch: {:?} vs {:?}",
+                classified, expected_error_type
+            ),
+        }
+    }
+
+    // Test retry logic works by simulating transient errors
+    use std::cell::Cell;
+    let attempt = Cell::new(0);
+    let operation = || {
+        let current = attempt.get();
+        attempt.set(current + 1);
+        if current < 2 {
+            Err(DbError::TransientIoError(format!(
+                "Attempt {}",
+                current + 1
+            )))
+        } else {
+            Ok(())
+        }
+    };
+
+    let result = persistence::retry_io_operation(operation, 3, 1, "test_retry");
+
+    assert!(
+        result.is_ok(),
+        "Retry should succeed after transient errors"
+    );
+    assert_eq!(attempt.get(), 3, "Should have retried 2 times");
+
+    // Test non-transient errors are not retried
+    let attempt = Cell::new(0);
+    let operation = || {
+        let current = attempt.get();
+        attempt.set(current + 1);
+        Err(DbError::IoError("Permanent error".to_string()))
+    };
+
+    let result: Result<(), DbError> =
+        persistence::retry_io_operation(operation, 3, 1, "test_no_retry");
+
+    assert!(
+        result.is_err(),
+        "Non-transient error should fail immediately"
+    );
+    assert_eq!(attempt.get(), 1, "Should not retry non-transient errors");
+
+    // Test disk full errors are not retried (they're not transient)
+    let attempt = Cell::new(0);
+    let operation = || {
+        let current = attempt.get();
+        attempt.set(current + 1);
+        Err(DbError::DiskFull("Disk full".to_string()))
+    };
+
+    let result: Result<(), DbError> =
+        persistence::retry_io_operation(operation, 3, 1, "test_disk_full");
+
+    assert!(result.is_err(), "Disk full error should fail immediately");
+    assert_eq!(attempt.get(), 1, "Should not retry disk full errors");
+
+    println!("Persistence I/O error handling tests passed");
+}

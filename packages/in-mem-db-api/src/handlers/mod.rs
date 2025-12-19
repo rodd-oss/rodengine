@@ -4,6 +4,7 @@ use http_body_util::BodyExt;
 use hyper::{body::Bytes, Request, Response};
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
+use tokio::time;
 
 use crate::router::{AppState, RouterError};
 use in_mem_db_core::table::Field;
@@ -11,6 +12,31 @@ use in_mem_db_runtime::{ApiRequest, CrudOperation};
 
 /// Type alias for matchit parameters with explicit lifetimes
 type MatchitParams<'a, 'b> = matchit::Params<'a, 'b>;
+
+/// Helper function to read request body with timeout
+async fn read_request_body_with_timeout(
+    req: Request<hyper::body::Incoming>,
+    timeout_ms: u64,
+) -> Result<Bytes, RouterError> {
+    let timeout_duration = time::Duration::from_millis(timeout_ms);
+    let body = time::timeout(timeout_duration, req.collect())
+        .await
+        .map_err(|_| RouterError::Timeout)?
+        .map_err(|e| RouterError::InternalError(format!("Failed to read request body: {}", e)))?;
+    Ok(body.to_bytes())
+}
+
+/// Helper function to wait for response with timeout
+async fn wait_for_response_with_timeout<T>(
+    rx: oneshot::Receiver<T>,
+    timeout_ms: u64,
+) -> Result<T, RouterError> {
+    let timeout_duration = time::Duration::from_millis(timeout_ms);
+    time::timeout(timeout_duration, rx)
+        .await
+        .map_err(|_| RouterError::Timeout)?
+        .map_err(|e| RouterError::InternalError(format!("Response channel closed: {}", e)))
+}
 
 /// Field definition for table creation.
 #[derive(Debug, Deserialize, Serialize)]
@@ -111,12 +137,8 @@ pub async fn create_table(
 ) -> Result<Response<Bytes>, RouterError> {
     let table_name = params.get("name").unwrap_or("unknown").to_string();
 
-    // Read and parse request body
-    let body_bytes = req
-        .collect()
-        .await
-        .map_err(|e| RouterError::InternalError(format!("Failed to read request body: {}", e)))?
-        .to_bytes();
+    // Read and parse request body with timeout
+    let body_bytes = read_request_body_with_timeout(req, state.config.request_timeout_ms).await?;
 
     let request: CreateTableRequest = serde_json::from_slice(&body_bytes)
         .map_err(|e| RouterError::InternalError(format!("Failed to parse request: {}", e)))?;
@@ -150,9 +172,7 @@ pub async fn create_table(
     send_result.map_err(|e| RouterError::InternalError(format!("Channel closed: {}", e)))?;
 
     // Wait for response
-    let result = rx
-        .await
-        .map_err(|e| RouterError::InternalError(format!("Response channel closed: {}", e)))?;
+    let result = wait_for_response_with_timeout(rx, state.config.response_timeout_ms).await?;
 
     let response_json =
         result.map_err(|e| RouterError::InternalError(format!("Runtime error: {}", e)))?;
@@ -197,9 +217,7 @@ pub async fn delete_table(
     send_result.map_err(|e| RouterError::InternalError(format!("Channel closed: {}", e)))?;
 
     // Wait for response
-    let result = rx
-        .await
-        .map_err(|e| RouterError::InternalError(format!("Response channel closed: {}", e)))?;
+    let result = wait_for_response_with_timeout(rx, state.config.response_timeout_ms).await?;
 
     result.map_err(|e| RouterError::InternalError(format!("Runtime error: {}", e)))?;
 
@@ -215,11 +233,7 @@ pub async fn add_field(
     let table_name = params.get("name").unwrap_or("unknown").to_string();
 
     // Read and parse request body
-    let body_bytes = req
-        .collect()
-        .await
-        .map_err(|e| RouterError::InternalError(format!("Failed to read request body: {}", e)))?
-        .to_bytes();
+    let body_bytes = read_request_body_with_timeout(req, state.config.request_timeout_ms).await?;
 
     let request: AddFieldRequest = serde_json::from_slice(&body_bytes)
         .map_err(|e| RouterError::InternalError(format!("Failed to parse request: {}", e)))?;
@@ -251,9 +265,7 @@ pub async fn add_field(
     send_result.map_err(|e| RouterError::InternalError(format!("Channel closed: {}", e)))?;
 
     // Wait for response
-    let result = rx
-        .await
-        .map_err(|e| RouterError::InternalError(format!("Response channel closed: {}", e)))?;
+    let result = wait_for_response_with_timeout(rx, state.config.response_timeout_ms).await?;
 
     let response_json =
         result.map_err(|e| RouterError::InternalError(format!("Runtime error: {}", e)))?;
@@ -303,9 +315,7 @@ pub async fn remove_field(
     send_result.map_err(|e| RouterError::InternalError(format!("Channel closed: {}", e)))?;
 
     // Wait for response
-    let result = rx
-        .await
-        .map_err(|e| RouterError::InternalError(format!("Response channel closed: {}", e)))?;
+    let result = wait_for_response_with_timeout(rx, state.config.response_timeout_ms).await?;
 
     result.map_err(|e| RouterError::InternalError(format!("Runtime error: {}", e)))?;
 
@@ -321,11 +331,7 @@ pub async fn create_record(
     let table_name = params.get("name").unwrap_or("unknown").to_string();
 
     // Read and parse request body
-    let body_bytes = req
-        .collect()
-        .await
-        .map_err(|e| RouterError::InternalError(format!("Failed to read request body: {}", e)))?
-        .to_bytes();
+    let body_bytes = read_request_body_with_timeout(req, state.config.request_timeout_ms).await?;
 
     let request: CreateRecordRequest = serde_json::from_slice(&body_bytes)
         .map_err(|e| RouterError::InternalError(format!("Failed to parse request: {}", e)))?;
@@ -345,9 +351,7 @@ pub async fn create_record(
     send_result.map_err(|e| RouterError::InternalError(format!("Channel closed: {}", e)))?;
 
     // Wait for response
-    let result = rx
-        .await
-        .map_err(|e| RouterError::InternalError(format!("Response channel closed: {}", e)))?;
+    let result = wait_for_response_with_timeout(rx, state.config.response_timeout_ms).await?;
 
     let response_json =
         result.map_err(|e| RouterError::InternalError(format!("Runtime error: {}", e)))?;
@@ -395,9 +399,7 @@ pub async fn read_record(
     send_result.map_err(|e| RouterError::InternalError(format!("Channel closed: {}", e)))?;
 
     // Wait for response
-    let result = rx
-        .await
-        .map_err(|e| RouterError::InternalError(format!("Response channel closed: {}", e)))?;
+    let result = wait_for_response_with_timeout(rx, state.config.response_timeout_ms).await?;
 
     let response_json =
         result.map_err(|e| RouterError::InternalError(format!("Runtime error: {}", e)))?;
@@ -427,11 +429,7 @@ pub async fn update_record(
     })?;
 
     // Read and parse request body
-    let body_bytes = req
-        .collect()
-        .await
-        .map_err(|e| RouterError::InternalError(format!("Failed to read request body: {}", e)))?
-        .to_bytes();
+    let body_bytes = read_request_body_with_timeout(req, state.config.request_timeout_ms).await?;
 
     let request: UpdateRecordRequest = serde_json::from_slice(&body_bytes)
         .map_err(|e| RouterError::InternalError(format!("Failed to parse request: {}", e)))?;
@@ -452,9 +450,7 @@ pub async fn update_record(
     send_result.map_err(|e| RouterError::InternalError(format!("Channel closed: {}", e)))?;
 
     // Wait for response
-    let result = rx
-        .await
-        .map_err(|e| RouterError::InternalError(format!("Response channel closed: {}", e)))?;
+    let result = wait_for_response_with_timeout(rx, state.config.response_timeout_ms).await?;
 
     result.map_err(|e| RouterError::InternalError(format!("Runtime error: {}", e)))?;
 
@@ -475,11 +471,7 @@ pub async fn partial_update_record(
     })?;
 
     // Read and parse request body
-    let body_bytes = req
-        .collect()
-        .await
-        .map_err(|e| RouterError::InternalError(format!("Failed to read request body: {}", e)))?
-        .to_bytes();
+    let body_bytes = read_request_body_with_timeout(req, state.config.request_timeout_ms).await?;
 
     let request: PartialUpdateRequest = serde_json::from_slice(&body_bytes)
         .map_err(|e| RouterError::InternalError(format!("Failed to parse request: {}", e)))?;
@@ -585,9 +577,7 @@ pub async fn delete_record(
     send_result.map_err(|e| RouterError::InternalError(format!("Channel closed: {}", e)))?;
 
     // Wait for response
-    let result = rx
-        .await
-        .map_err(|e| RouterError::InternalError(format!("Response channel closed: {}", e)))?;
+    let result = wait_for_response_with_timeout(rx, state.config.response_timeout_ms).await?;
 
     result.map_err(|e| RouterError::InternalError(format!("Runtime error: {}", e)))?;
 
@@ -601,11 +591,7 @@ pub async fn create_relation(
     state: AppState,
 ) -> Result<Response<Bytes>, RouterError> {
     // Read and parse request body
-    let body_bytes = req
-        .collect()
-        .await
-        .map_err(|e| RouterError::InternalError(format!("Failed to read request body: {}", e)))?
-        .to_bytes();
+    let body_bytes = read_request_body_with_timeout(req, state.config.request_timeout_ms).await?;
 
     let request: CreateRelationRequest = serde_json::from_slice(&body_bytes)
         .map_err(|e| RouterError::InternalError(format!("Failed to parse request: {}", e)))?;
@@ -625,9 +611,7 @@ pub async fn create_relation(
     send_result.map_err(|e| RouterError::InternalError(format!("Channel closed: {}", e)))?;
 
     // Wait for response
-    let result = rx
-        .await
-        .map_err(|e| RouterError::InternalError(format!("Response channel closed: {}", e)))?;
+    let result = wait_for_response_with_timeout(rx, state.config.response_timeout_ms).await?;
 
     let response_json =
         result.map_err(|e| RouterError::InternalError(format!("Runtime error: {}", e)))?;
@@ -671,9 +655,7 @@ pub async fn delete_relation(
     send_result.map_err(|e| RouterError::InternalError(format!("Channel closed: {}", e)))?;
 
     // Wait for response
-    let result = rx
-        .await
-        .map_err(|e| RouterError::InternalError(format!("Response channel closed: {}", e)))?;
+    let result = wait_for_response_with_timeout(rx, state.config.response_timeout_ms).await?;
 
     result.map_err(|e| RouterError::InternalError(format!("Runtime error: {}", e)))?;
 
@@ -689,11 +671,7 @@ pub async fn rpc(
     let procedure_name = params.get("name").unwrap_or("unknown").to_string();
 
     // Read JSON params from request body
-    let body_bytes = req
-        .collect()
-        .await
-        .map_err(|e| RouterError::InternalError(format!("Failed to read request body: {}", e)))?
-        .to_bytes();
+    let body_bytes = read_request_body_with_timeout(req, state.config.request_timeout_ms).await?;
 
     let params_json: serde_json::Value = if body_bytes.is_empty() {
         serde_json::json!({})
@@ -716,9 +694,7 @@ pub async fn rpc(
     send_result.map_err(|e| RouterError::InternalError(format!("Channel closed: {}", e)))?;
 
     // Wait for response
-    let result = rx
-        .await
-        .map_err(|e| RouterError::InternalError(format!("Response channel closed: {}", e)))?;
+    let result = wait_for_response_with_timeout(rx, state.config.response_timeout_ms).await?;
 
     let response_json =
         result.map_err(|e| RouterError::InternalError(format!("Runtime error: {}", e)))?;

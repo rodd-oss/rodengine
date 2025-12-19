@@ -5,7 +5,7 @@ mod test;
 
 use std::collections::HashMap;
 use std::fs::{self, File};
-use std::io::{Read, Write};
+use std::io::{ErrorKind, Read, Write};
 use std::path::PathBuf;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
@@ -81,6 +81,69 @@ pub struct CustomTypeSchema {
     pub pod: bool,
 }
 
+/// Classifies I/O errors into specific DbError variants.
+pub fn classify_io_error(error: std::io::Error, context: &str) -> DbError {
+    match error.kind() {
+        ErrorKind::StorageFull | ErrorKind::OutOfMemory => {
+            DbError::DiskFull(format!("{}: {}", context, error))
+        }
+        ErrorKind::WouldBlock | ErrorKind::TimedOut | ErrorKind::Interrupted => {
+            DbError::TransientIoError(format!("{}: {}", context, error))
+        }
+        ErrorKind::NotFound
+        | ErrorKind::PermissionDenied
+        | ErrorKind::AlreadyExists
+        | ErrorKind::InvalidInput
+        | ErrorKind::InvalidData => DbError::IoError(format!("{}: {}", context, error)),
+        _ => DbError::IoError(format!("{}: {}", context, error)),
+    }
+}
+
+/// Retries an operation that may fail with transient I/O errors.
+pub fn retry_io_operation<F, T>(
+    operation: F,
+    max_retries: u32,
+    retry_delay_ms: u64,
+    context: &str,
+) -> Result<T, DbError>
+where
+    F: Fn() -> Result<T, DbError>,
+{
+    let mut attempt = 0;
+    loop {
+        match operation() {
+            Ok(result) => return Ok(result),
+            Err(err) => {
+                attempt += 1;
+                if attempt > max_retries {
+                    return Err(err);
+                }
+
+                // Only retry transient I/O errors
+                if let DbError::TransientIoError(_) = err {
+                    tracing::warn!(
+                        "Transient I/O error in {} (attempt {}/{}): {}",
+                        context,
+                        attempt,
+                        max_retries,
+                        err
+                    );
+
+                    // Sleep before retry
+                    if retry_delay_ms > 0 {
+                        std::thread::sleep(std::time::Duration::from_millis(retry_delay_ms));
+                    }
+
+                    continue;
+                }
+
+                // Non-transient error, return immediately
+                return Err(err);
+            }
+        }
+    }
+}
+
 /// Persistence manager for schema and data files.
 #[derive(Debug)]
 pub struct PersistenceManager {
@@ -92,6 +155,10 @@ pub struct PersistenceManager {
     tick_count: AtomicU64,
     /// Maximum buffer size per table in bytes
     max_buffer_size: usize,
+    /// Maximum retry attempts for transient I/O errors
+    max_retries: u32,
+    /// Delay between retry attempts in milliseconds
+    retry_delay_ms: u64,
 }
 
 impl PersistenceManager {
@@ -102,6 +169,8 @@ impl PersistenceManager {
             flush_interval_ticks: config.persistence_interval_ticks,
             tick_count: AtomicU64::new(0),
             max_buffer_size: config.max_buffer_size,
+            max_retries: config.persistence_max_retries,
+            retry_delay_ms: config.persistence_retry_delay_ms,
         }
     }
 
@@ -113,6 +182,16 @@ impl PersistenceManager {
     /// # Returns
     /// `Result<(), DbError>` indicating success or failure.
     pub fn save_schema(&self, db: &Database) -> Result<(), DbError> {
+        retry_io_operation(
+            || self.save_schema_internal(db),
+            self.max_retries,
+            self.retry_delay_ms,
+            "save_schema",
+        )
+    }
+
+    /// Internal implementation of save_schema with retry logic.
+    fn save_schema_internal(&self, db: &Database) -> Result<(), DbError> {
         let schema = self.build_schema(db)?;
         let schema_json = serde_json::to_string_pretty(&schema)
             .map_err(|e| DbError::SerializationError(e.to_string()))?;
@@ -122,23 +201,20 @@ impl PersistenceManager {
         let final_path = self.data_dir.join("schema.json");
 
         // Ensure data directory exists
-        fs::create_dir_all(&self.data_dir).map_err(|e| {
-            DbError::SerializationError(format!("Failed to create data directory: {}", e))
-        })?;
+        fs::create_dir_all(&self.data_dir)
+            .map_err(|e| classify_io_error(e, "Failed to create data directory"))?;
 
         // Write to temporary file
-        let mut file = File::create(&temp_path).map_err(|e| {
-            DbError::SerializationError(format!("Failed to create temp file: {}", e))
-        })?;
+        let mut file = File::create(&temp_path)
+            .map_err(|e| classify_io_error(e, "Failed to create temp file"))?;
         file.write_all(schema_json.as_bytes())
-            .map_err(|e| DbError::SerializationError(format!("Failed to write schema: {}", e)))?;
+            .map_err(|e| classify_io_error(e, "Failed to write schema"))?;
         file.sync_all()
-            .map_err(|e| DbError::SerializationError(format!("Failed to sync schema: {}", e)))?;
+            .map_err(|e| classify_io_error(e, "Failed to sync schema"))?;
 
         // Atomic rename
-        fs::rename(&temp_path, &final_path).map_err(|e| {
-            DbError::SerializationError(format!("Failed to rename schema file: {}", e))
-        })?;
+        fs::rename(&temp_path, &final_path)
+            .map_err(|e| classify_io_error(e, "Failed to rename schema file"))?;
 
         Ok(())
     }
@@ -159,13 +235,11 @@ impl PersistenceManager {
         }
 
         // Read schema file
-        let mut file = File::open(&schema_path).map_err(|e| {
-            DbError::SerializationError(format!("Failed to open schema file: {}", e))
-        })?;
+        let mut file = File::open(&schema_path)
+            .map_err(|e| classify_io_error(e, "Failed to open schema file"))?;
         let mut contents = String::new();
-        file.read_to_string(&mut contents).map_err(|e| {
-            DbError::SerializationError(format!("Failed to read schema file: {}", e))
-        })?;
+        file.read_to_string(&mut contents)
+            .map_err(|e| classify_io_error(e, "Failed to read schema file"))?;
 
         // Parse schema
         let schema: SchemaFile = serde_json::from_str(&contents)
@@ -230,15 +304,23 @@ impl PersistenceManager {
     /// # Returns
     /// `Result<(), DbError>` indicating success or failure.
     pub fn flush_table_data(&self, table: &Table) -> Result<(), DbError> {
+        retry_io_operation(
+            || self.flush_table_data_internal(table),
+            self.max_retries,
+            self.retry_delay_ms,
+            "flush_table_data",
+        )
+    }
+
+    /// Internal implementation of flush_table_data with retry logic.
+    fn flush_table_data_internal(&self, table: &Table) -> Result<(), DbError> {
         // Ensure data directory exists
-        fs::create_dir_all(&self.data_dir).map_err(|e| {
-            DbError::SerializationError(format!("Failed to create data directory: {}", e))
-        })?;
+        fs::create_dir_all(&self.data_dir)
+            .map_err(|e| classify_io_error(e, "Failed to create data directory"))?;
 
         let data_dir = self.data_dir.join("data");
-        fs::create_dir_all(&data_dir).map_err(|e| {
-            DbError::SerializationError(format!("Failed to create data directory: {}", e))
-        })?;
+        fs::create_dir_all(&data_dir)
+            .map_err(|e| classify_io_error(e, "Failed to create data directory"))?;
 
         let temp_path = data_dir.join(format!("{}.bin.tmp", table.name));
         let final_path = data_dir.join(format!("{}.bin", table.name));
@@ -252,18 +334,16 @@ impl PersistenceManager {
         let checksum = hasher.finalize();
 
         // Write to temporary file
-        let mut file = File::create(&temp_path).map_err(|e| {
-            DbError::SerializationError(format!("Failed to create temp file: {}", e))
-        })?;
+        let mut file = File::create(&temp_path)
+            .map_err(|e| classify_io_error(e, "Failed to create temp file"))?;
         file.write_all(buffer.as_slice())
-            .map_err(|e| DbError::SerializationError(format!("Failed to write data: {}", e)))?;
+            .map_err(|e| classify_io_error(e, "Failed to write data"))?;
         file.sync_all()
-            .map_err(|e| DbError::SerializationError(format!("Failed to sync data: {}", e)))?;
+            .map_err(|e| classify_io_error(e, "Failed to sync data"))?;
 
         // Atomic rename
-        fs::rename(&temp_path, &final_path).map_err(|e| {
-            DbError::SerializationError(format!("Failed to rename data file: {}", e))
-        })?;
+        fs::rename(&temp_path, &final_path)
+            .map_err(|e| classify_io_error(e, "Failed to rename data file"))?;
 
         // Update checksum in schema
         self.update_schema_checksum(&table.name, checksum)?;
@@ -300,9 +380,8 @@ impl PersistenceManager {
         let current_size = buffer.len();
 
         // Check if file needs to be grown
-        let metadata = fs::metadata(&data_path).map_err(|e| {
-            DbError::SerializationError(format!("Failed to get file metadata: {}", e))
-        })?;
+        let metadata = fs::metadata(&data_path)
+            .map_err(|e| classify_io_error(e, "Failed to get file metadata"))?;
         let file_size = metadata.len() as usize;
 
         if current_size <= file_size {
@@ -315,9 +394,7 @@ impl PersistenceManager {
         let mut file = fs::OpenOptions::new()
             .append(true)
             .open(&data_path)
-            .map_err(|e| {
-                DbError::SerializationError(format!("Failed to open file for appending: {}", e))
-            })?;
+            .map_err(|e| classify_io_error(e, "Failed to open file for appending"))?;
 
         // Calculate additional bytes needed
         let additional_bytes = current_size - file_size;
@@ -325,10 +402,9 @@ impl PersistenceManager {
         // Write zeros to extend file (this will be overwritten by actual data on next flush)
         let zeros = vec![0u8; additional_bytes];
         file.write_all(&zeros)
-            .map_err(|e| DbError::SerializationError(format!("Failed to extend file: {}", e)))?;
-        file.sync_all().map_err(|e| {
-            DbError::SerializationError(format!("Failed to sync extended file: {}", e))
-        })?;
+            .map_err(|e| classify_io_error(e, "Failed to extend file"))?;
+        file.sync_all()
+            .map_err(|e| classify_io_error(e, "Failed to sync extended file"))?;
 
         // Now we need to reload the memory-mapped file
         // For simplicity, we'll just flush the entire buffer
@@ -373,11 +449,11 @@ impl PersistenceManager {
         data_path: &std::path::Path,
     ) -> Result<(), DbError> {
         // Read data file
-        let mut file = File::open(data_path)
-            .map_err(|e| DbError::SerializationError(format!("Failed to open data file: {}", e)))?;
+        let mut file =
+            File::open(data_path).map_err(|e| classify_io_error(e, "Failed to open data file"))?;
         let mut data = Vec::new();
         file.read_to_end(&mut data)
-            .map_err(|e| DbError::SerializationError(format!("Failed to read data file: {}", e)))?;
+            .map_err(|e| classify_io_error(e, "Failed to read data file"))?;
 
         // Verify checksum
         self.verify_checksum(&table.name, &data)?;
@@ -393,14 +469,12 @@ impl PersistenceManager {
         data_path: &std::path::Path,
     ) -> Result<(), DbError> {
         // Open file for reading
-        let file = File::open(data_path)
-            .map_err(|e| DbError::SerializationError(format!("Failed to open data file: {}", e)))?;
+        let file =
+            File::open(data_path).map_err(|e| classify_io_error(e, "Failed to open data file"))?;
 
         // Memory map the file
         let mmap = unsafe {
-            Mmap::map(&file).map_err(|e| {
-                DbError::SerializationError(format!("Failed to memory map file: {}", e))
-            })?
+            Mmap::map(&file).map_err(|e| classify_io_error(e, "Failed to memory map file"))?
         };
 
         // Verify checksum
@@ -665,8 +739,7 @@ impl PersistenceManager {
 
     /// Calculates CRC32 checksum for a file.
     fn calculate_file_checksum(&self, path: &std::path::Path) -> Result<u32, DbError> {
-        let mut file = File::open(path)
-            .map_err(|e| DbError::SerializationError(format!("Failed to open file: {}", e)))?;
+        let mut file = File::open(path).map_err(|e| classify_io_error(e, "Failed to open file"))?;
         let mut hasher = Hasher::new();
 
         // Use a larger buffer for better performance (64KB)
@@ -675,7 +748,7 @@ impl PersistenceManager {
         loop {
             let bytes_read = file
                 .read(&mut buffer)
-                .map_err(|e| DbError::SerializationError(format!("Failed to read file: {}", e)))?;
+                .map_err(|e| classify_io_error(e, "Failed to read file"))?;
             if bytes_read == 0 {
                 break;
             }
@@ -694,13 +767,11 @@ impl PersistenceManager {
         }
 
         // Read existing schema
-        let mut file = File::open(&schema_path).map_err(|e| {
-            DbError::SerializationError(format!("Failed to open schema file: {}", e))
-        })?;
+        let mut file = File::open(&schema_path)
+            .map_err(|e| classify_io_error(e, "Failed to open schema file"))?;
         let mut contents = String::new();
-        file.read_to_string(&mut contents).map_err(|e| {
-            DbError::SerializationError(format!("Failed to read schema file: {}", e))
-        })?;
+        file.read_to_string(&mut contents)
+            .map_err(|e| classify_io_error(e, "Failed to read schema file"))?;
 
         // Parse schema
         let mut schema: SchemaFile = serde_json::from_str(&contents)
@@ -714,20 +785,18 @@ impl PersistenceManager {
             .map_err(|e| DbError::SerializationError(e.to_string()))?;
 
         let temp_path = self.data_dir.join("schema.json.tmp");
-        let mut temp_file = File::create(&temp_path).map_err(|e| {
-            DbError::SerializationError(format!("Failed to create temp schema file: {}", e))
-        })?;
+        let mut temp_file = File::create(&temp_path)
+            .map_err(|e| classify_io_error(e, "Failed to create temp schema file"))?;
         temp_file
             .write_all(schema_json.as_bytes())
-            .map_err(|e| DbError::SerializationError(format!("Failed to write schema: {}", e)))?;
+            .map_err(|e| classify_io_error(e, "Failed to write schema"))?;
         temp_file
             .sync_all()
-            .map_err(|e| DbError::SerializationError(format!("Failed to sync schema: {}", e)))?;
+            .map_err(|e| classify_io_error(e, "Failed to sync schema"))?;
 
         // Atomic rename
-        fs::rename(&temp_path, &schema_path).map_err(|e| {
-            DbError::SerializationError(format!("Failed to rename schema file: {}", e))
-        })?;
+        fs::rename(&temp_path, &schema_path)
+            .map_err(|e| classify_io_error(e, "Failed to rename schema file"))?;
 
         Ok(())
     }
@@ -741,13 +810,11 @@ impl PersistenceManager {
         }
 
         // Read schema to get expected checksum
-        let mut file = File::open(&schema_path).map_err(|e| {
-            DbError::SerializationError(format!("Failed to open schema file: {}", e))
-        })?;
+        let mut file = File::open(&schema_path)
+            .map_err(|e| classify_io_error(e, "Failed to open schema file"))?;
         let mut contents = String::new();
-        file.read_to_string(&mut contents).map_err(|e| {
-            DbError::SerializationError(format!("Failed to read schema file: {}", e))
-        })?;
+        file.read_to_string(&mut contents)
+            .map_err(|e| classify_io_error(e, "Failed to read schema file"))?;
 
         let schema: SchemaFile = serde_json::from_str(&contents)
             .map_err(|e| DbError::SerializationError(format!("Failed to parse schema: {}", e)))?;

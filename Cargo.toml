@@ -2,7 +2,7 @@
 resolver = "2"
 members = [
     "packages/in-mem-db-core",
-    "packages/in-mem-db-runtime", 
+    "packages/in-mem-db-runtime",
     "packages/in-mem-db-api",
     "apps/db-server",
     "apps/db-tool",
@@ -24,7 +24,7 @@ hyper-util = { version = "0.1", features = ["tokio"] }
 http-body-util = "0.1"
 matchit = "0.8"
 clap = { version = "4.0", features = ["derive"] }
-criterion = "0.5"
+criterion = "0.7"
 tempfile = "3.10"
 crc32fast = "1.4"
 

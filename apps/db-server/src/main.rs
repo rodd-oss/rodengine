@@ -33,6 +33,14 @@ struct Args {
     /// Data directory for persistence
     #[arg(long, default_value = "./data")]
     data_dir: String,
+
+    /// Request timeout in milliseconds
+    #[arg(long, default_value_t = 5000)]
+    request_timeout_ms: u64,
+
+    /// Response timeout in milliseconds
+    #[arg(long, default_value_t = 10000)]
+    response_timeout_ms: u64,
 }
 
 #[tokio::main]
@@ -52,6 +60,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         data_dir: PathBuf::from(&args.data_dir),
         procedure_thread_pool_size: 0, // Default value (num_cpus)
         max_buffer_size: usize::MAX,   // Default value (unlimited)
+        request_timeout_ms: args.request_timeout_ms,
+        response_timeout_ms: args.response_timeout_ms,
+        persistence_max_retries: 3,      // Default value
+        persistence_retry_delay_ms: 100, // Default value
     });
 
     // Create persistence manager
@@ -190,6 +202,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  Port: {}", args.port);
     println!("  Tickrate: {} Hz", args.tickrate);
     println!("  Data directory: {}", args.data_dir);
+    println!("  Request timeout: {} ms", args.request_timeout_ms);
+    println!("  Response timeout: {} ms", args.response_timeout_ms);
 
     // Start server with graceful shutdown
     let server_handle = tokio::spawn(async move {

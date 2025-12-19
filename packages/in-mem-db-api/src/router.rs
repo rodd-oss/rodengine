@@ -184,6 +184,7 @@ impl RouteHandler {
 pub enum RouterError {
     MethodNotAllowed,
     InternalError(String),
+    Timeout,
 }
 
 impl std::fmt::Display for RouterError {
@@ -191,6 +192,7 @@ impl std::fmt::Display for RouterError {
         match self {
             RouterError::MethodNotAllowed => write!(f, "Method Not Allowed"),
             RouterError::InternalError(msg) => write!(f, "Internal Error: {}", msg),
+            RouterError::Timeout => write!(f, "Request Timeout"),
         }
     }
 }
@@ -202,6 +204,7 @@ impl From<RouterError> for Response<Bytes> {
         let (status, message) = match &err {
             RouterError::MethodNotAllowed => (405, "Method Not Allowed"),
             RouterError::InternalError(msg) => (500, msg.as_str()),
+            RouterError::Timeout => (408, "Request Timeout"),
         };
 
         let body = json!({

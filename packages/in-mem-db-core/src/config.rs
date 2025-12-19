@@ -19,6 +19,14 @@ pub struct DbConfig {
     pub procedure_thread_pool_size: usize,
     /// Maximum buffer size per table in bytes (default: unlimited)
     pub max_buffer_size: usize,
+    /// Request timeout in milliseconds
+    pub request_timeout_ms: u64,
+    /// Response timeout in milliseconds
+    pub response_timeout_ms: u64,
+    /// Maximum retry attempts for transient I/O errors
+    pub persistence_max_retries: u32,
+    /// Delay between retry attempts in milliseconds
+    pub persistence_retry_delay_ms: u64,
 }
 
 impl Default for DbConfig {
@@ -31,6 +39,10 @@ impl Default for DbConfig {
             data_dir: PathBuf::from("./data"),
             procedure_thread_pool_size: 0,
             max_buffer_size: usize::MAX,
+            request_timeout_ms: 5000,        // 5 seconds default
+            response_timeout_ms: 10000,      // 10 seconds default
+            persistence_max_retries: 3,      // Default retry attempts
+            persistence_retry_delay_ms: 100, // 100ms delay between retries
         }
     }
 }

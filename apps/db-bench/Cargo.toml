@@ -18,5 +18,9 @@ in-mem-db-runtime = { path = "../../packages/in-mem-db-runtime", version = "0.1.
 criterion = { workspace = true }
 tracing = { workspace = true }
 anyhow = { workspace = true }
+clap = { workspace = true }
+rand = "0.8"
+tokio = { workspace = true, features = ["sync"] }
+serde_json = { workspace = true }
 
 [dev-dependencies]

@@ -77,4 +77,16 @@ pub enum DbError {
         limit: usize,
         table: String,
     },
+
+    /// Disk full error during persistence
+    #[error("Disk full: {0}")]
+    DiskFull(String),
+
+    /// I/O error during persistence
+    #[error("I/O error: {0}")]
+    IoError(String),
+
+    /// Transient I/O error that may succeed on retry
+    #[error("Transient I/O error: {0}")]
+    TransientIoError(String),
 }

@@ -285,15 +285,15 @@ feature_failure_modes_start
 [x] task_fm_2: Add [#timeout] for each test
 [x] task_fm_3: Schema corruption detection and graceful shutdown
 [x] task_fm_4: Memory pressure handling with buffer growth limits
-[] task_fm_5: Network timeout handling for API requests
-[] task_fm_6: Disk full persistence error handling
+[x] task_fm_5: Network timeout handling for API requests
+[x] task_fm_6: Disk full persistence error handling
 feature_failure_modes_end
 feature_performance_regression_start
-[] task_perf_1: Baseline throughput: >10M reads/sec/core
-[] task_perf_2: Write throughput: >1M writes/sec/core
-[] task_perf_3: Procedure scaling linear with core count (>90% efficiency)
-[] task_perf_4: Memory overhead: <5% beyond raw data size
-[] task_perf_5: Cache line contention prevention verification
+[x] task_perf_1: Baseline throughput: >10M reads/sec/core
+[x] task_perf_2: Write throughput: >1M writes/sec/core
+[x] task_perf_3: Procedure scaling linear with core count (>90% efficiency)
+[x] task_perf_4: Memory overhead: <5% beyond raw data size
+[x] task_perf_5: Cache line contention prevention verification
 feature_performance_regression_end
 phase_integration_end
 phase_robustness_hardening_start

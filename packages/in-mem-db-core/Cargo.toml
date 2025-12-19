@@ -29,9 +29,27 @@ anyhow.workspace = true
 tempfile.workspace = true
 criterion = { workspace = true }
 ntest = "0.9.5"
+rand = "0.8"
+rayon = "1.10"
 
 [[bench]]
 name = "mmap_benchmark"
+harness = false
+
+[[bench]]
+name = "throughput_benchmark"
+harness = false
+
+[[bench]]
+name = "procedure_scaling_benchmark"
+harness = false
+
+[[bench]]
+name = "memory_overhead_benchmark"
+harness = false
+
+[[bench]]
+name = "cache_contention_benchmark"
 harness = false
 
 [[test]]
