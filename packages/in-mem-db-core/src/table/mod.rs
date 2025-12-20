@@ -562,8 +562,12 @@ impl Table {
         let field = self.get_field(field_name).ok_or("field not found")?;
 
         let record_offset = self.record_offset(record_index);
-        let field_offset = record_offset + field.offset;
-        let field_end = field_offset + field.size;
+        let field_offset = record_offset
+            .checked_add(field.offset)
+            .ok_or("field offset overflow")?;
+        let field_end = field_offset
+            .checked_add(field.size)
+            .ok_or("field end overflow")?;
 
         self.buffer.slice(field_offset..field_end)
     }
@@ -743,7 +747,12 @@ impl Table {
         let mut new_buffer = self.buffer.load_full();
 
         // Validate offset is within buffer bounds
-        if offset + self.record_size > new_buffer.len() {
+        let record_end = offset
+            .checked_add(self.record_size)
+            .ok_or(DbError::CapacityOverflow {
+                operation: "record update",
+            })?;
+        if record_end > new_buffer.len() {
             return Err(DbError::InvalidOffset {
                 table: self.name.clone(),
                 offset,
@@ -752,7 +761,7 @@ impl Table {
         }
 
         // Update record data
-        let slice = &mut new_buffer[offset..offset + self.record_size];
+        let slice = &mut new_buffer[offset..record_end];
         slice.copy_from_slice(data);
 
         // Atomically swap buffers (last-writer-wins semantics)
@@ -795,7 +804,12 @@ impl Table {
         let mut new_buffer = self.buffer.load_full();
 
         // Validate offset is within buffer bounds
-        if offset + self.record_size > new_buffer.len() {
+        let record_end = offset
+            .checked_add(self.record_size)
+            .ok_or(DbError::CapacityOverflow {
+                operation: "partial update",
+            })?;
+        if record_end > new_buffer.len() {
             return Err(DbError::InvalidOffset {
                 table: self.name.clone(),
                 offset,
@@ -822,10 +836,21 @@ impl Table {
             }
 
             // Calculate field offset within record
-            let field_offset = offset + field.offset;
+            let field_offset =
+                offset
+                    .checked_add(field.offset)
+                    .ok_or(DbError::CapacityOverflow {
+                        operation: "field offset calculation",
+                    })?;
 
             // Update field data
-            let slice = &mut new_buffer[field_offset..field_offset + field.size];
+            let field_end =
+                field_offset
+                    .checked_add(field.size)
+                    .ok_or(DbError::CapacityOverflow {
+                        operation: "field end calculation",
+                    })?;
+            let slice = &mut new_buffer[field_offset..field_end];
             slice.copy_from_slice(field_data);
         }
 
@@ -884,7 +909,12 @@ impl Table {
         let mut new_buffer = self.buffer.load_full();
 
         // Validate offset is within buffer bounds
-        if offset + self.record_size > new_buffer.len() {
+        let record_end = offset
+            .checked_add(self.record_size)
+            .ok_or(DbError::CapacityOverflow {
+                operation: "record deletion",
+            })?;
+        if record_end > new_buffer.len() {
             return Err(DbError::InvalidOffset {
                 table: self.name.clone(),
                 offset,
@@ -893,7 +923,11 @@ impl Table {
         }
 
         // Calculate field offset within record
-        let field_offset = offset + field.offset;
+        let field_offset = offset
+            .checked_add(field.offset)
+            .ok_or(DbError::CapacityOverflow {
+                operation: "field offset calculation",
+            })?;
 
         // Set deletion flag to true (non-zero)
         new_buffer[field_offset] = 1;
@@ -951,13 +985,28 @@ impl Table {
         let mut records_removed = 0;
 
         for i in 0..record_count {
-            let offset = i * self.record_size;
-            let field_offset = offset + field.offset;
+            let offset = i
+                .checked_mul(self.record_size)
+                .ok_or(DbError::CapacityOverflow {
+                    operation: "record offset calculation",
+                })?;
+            let field_offset =
+                offset
+                    .checked_add(field.offset)
+                    .ok_or(DbError::CapacityOverflow {
+                        operation: "field offset calculation",
+                    })?;
 
             // Check if record is deleted
             if current_buffer[field_offset] == 0 {
                 // Record not deleted, copy it
-                let record_slice = &current_buffer[offset..offset + self.record_size];
+                let record_end =
+                    offset
+                        .checked_add(self.record_size)
+                        .ok_or(DbError::CapacityOverflow {
+                            operation: "record slice calculation",
+                        })?;
+                let record_slice = &current_buffer[offset..record_end];
                 new_buffer.extend_from_slice(record_slice);
             } else {
                 records_removed += 1;
@@ -990,6 +1039,113 @@ impl Table {
     /// `Option<&Field>` containing the field definition if found.
     pub fn get_field(&self, field_name: &str) -> Option<&Field> {
         self.fields.iter().find(|f| f.name == field_name)
+    }
+
+    /// Queries records with simple field equality filters.
+    ///
+    /// # Arguments
+    /// * `filters` - Field name to value mapping for equality filters
+    /// * `limit` - Maximum number of records to return
+    /// * `offset` - Number of records to skip
+    ///
+    /// # Returns
+    /// `Result<Vec<usize>, DbError>` containing indices of matching records.
+    ///
+    /// # Performance
+    /// - O(n) where n is number of records
+    /// - Uses raw pointer comparisons for efficiency
+    /// - Zero allocations per field comparison
+    pub fn query_records(
+        &self,
+        filters: &std::collections::HashMap<String, Vec<u8>>,
+        limit: Option<usize>,
+        offset: Option<usize>,
+    ) -> Result<Vec<usize>, DbError> {
+        let buffer = self.buffer.load();
+        let buffer_slice = buffer.as_slice();
+        let record_count = self.record_count();
+
+        // Pre-process filters to get field offsets and expected bytes
+        let mut filter_specs = Vec::new();
+        for (field_name, expected_bytes) in filters {
+            if let Some(field) = self.get_field(field_name) {
+                if expected_bytes.len() != field.size {
+                    return Err(DbError::TypeMismatch {
+                        expected: format!("{} bytes for field '{}'", field.size, field_name),
+                        got: format!("{} bytes", expected_bytes.len()),
+                    });
+                }
+                filter_specs.push((field.offset, expected_bytes.as_slice()));
+            } else {
+                return Err(DbError::FieldNotFound {
+                    table: self.name.clone(),
+                    field: field_name.clone(),
+                });
+            }
+        }
+
+        let mut matching_indices = Vec::new();
+        let skip_count = offset.unwrap_or(0);
+        let mut matched_total = 0;
+
+        for record_index in 0..record_count {
+            let record_offset =
+                record_index
+                    .checked_mul(self.record_size)
+                    .ok_or(DbError::CapacityOverflow {
+                        operation: "query operation",
+                    })?;
+
+            // Check all filters
+            let mut matches_all = true;
+            for &(field_offset, expected_bytes) in &filter_specs {
+                let field_start =
+                    record_offset
+                        .checked_add(field_offset)
+                        .ok_or(DbError::CapacityOverflow {
+                            operation: "query operation",
+                        })?;
+                let field_end = field_start.checked_add(expected_bytes.len()).ok_or(
+                    DbError::CapacityOverflow {
+                        operation: "query operation",
+                    },
+                )?;
+
+                if field_end > buffer_slice.len() {
+                    return Err(DbError::InvalidOffset {
+                        table: self.name.clone(),
+                        offset: field_end,
+                        max: buffer_slice.len().saturating_sub(expected_bytes.len()),
+                    });
+                }
+
+                // Compare field bytes with expected bytes
+                if &buffer_slice[field_start..field_end] != expected_bytes {
+                    matches_all = false;
+                    break;
+                }
+            }
+
+            if matches_all {
+                matched_total += 1;
+
+                // Skip records based on offset
+                if matched_total <= skip_count {
+                    continue;
+                }
+
+                matching_indices.push(record_index);
+
+                // Check limit
+                if let Some(limit_val) = limit {
+                    if matching_indices.len() >= limit_val {
+                        break;
+                    }
+                }
+            }
+        }
+
+        Ok(matching_indices)
     }
 
     /// Adds a relation to another table.
@@ -1780,6 +1936,88 @@ mod tests {
         }
 
         // All threads successfully accessed the same buffer concurrently
+    }
+
+    #[timeout(1000)]
+    #[test]
+    fn test_query_records() {
+        let fields = create_test_fields();
+        let table = Table::create("test_table".to_string(), fields, Some(100), usize::MAX).unwrap();
+
+        // Create 5 test records
+        for i in 0..5 {
+            let mut data = vec![0u8; table.record_size];
+            // Set id field (u64 at offset 0)
+            data[0..8].copy_from_slice(&(i as u64 + 1).to_le_bytes());
+            // Set name field (string at offset 8) - 260 bytes total
+            let name = if i % 2 == 0 { "even" } else { "odd" };
+            let name_bytes = name.as_bytes();
+            data[8..12].copy_from_slice(&(name_bytes.len() as u32).to_ne_bytes()); // Length prefix
+            data[12..12 + name_bytes.len()].copy_from_slice(name_bytes);
+            // Set active field (bool at offset 268)
+            data[268] = if i < 3 { 1 } else { 0 }; // First 3 active, last 2 inactive
+            table.create_record(&data).unwrap();
+        }
+
+        assert_eq!(table.record_count(), 5);
+
+        // Test query with no filters (should return all records)
+        let filters = std::collections::HashMap::new();
+        let result = table.query_records(&filters, None, None).unwrap();
+        assert_eq!(result.len(), 5);
+        assert_eq!(result, vec![0, 1, 2, 3, 4]);
+
+        // Test query with limit
+        let result = table.query_records(&filters, Some(2), None).unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result, vec![0, 1]);
+
+        // Test query with offset
+        let result = table.query_records(&filters, None, Some(2)).unwrap();
+        assert_eq!(result.len(), 3);
+        assert_eq!(result, vec![2, 3, 4]);
+
+        // Test query with limit and offset
+        let result = table.query_records(&filters, Some(2), Some(1)).unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result, vec![1, 2]);
+
+        // Test query with field filter (active = true)
+        let mut filters = std::collections::HashMap::new();
+        filters.insert("active".to_string(), vec![1]); // true
+        let result = table.query_records(&filters, None, None).unwrap();
+        assert_eq!(result.len(), 3); // First 3 records are active
+        assert_eq!(result, vec![0, 1, 2]);
+
+        // Test query with field filter and limit
+        let result = table.query_records(&filters, Some(2), None).unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result, vec![0, 1]);
+
+        // Test query with multiple field filters
+        // Create filter for name="even" (need to serialize string properly)
+        let mut name_filter = vec![0u8; 260];
+        name_filter[0..4].copy_from_slice(&4u32.to_ne_bytes()); // Length prefix (4 bytes)
+        name_filter[4..8].copy_from_slice(b"even"); // String data
+        filters.insert("name".to_string(), name_filter);
+
+        let result = table.query_records(&filters, None, None).unwrap();
+        // Should find records where active=true AND name="even"
+        // Records 0 and 2 are even and active
+        assert_eq!(result.len(), 2);
+        assert_eq!(result, vec![0, 2]);
+
+        // Test invalid field name
+        let mut invalid_filters = std::collections::HashMap::new();
+        invalid_filters.insert("nonexistent".to_string(), vec![1]);
+        let result = table.query_records(&invalid_filters, None, None);
+        assert!(result.is_err());
+
+        // Test invalid filter size
+        let mut invalid_size_filters = std::collections::HashMap::new();
+        invalid_size_filters.insert("active".to_string(), vec![1, 2]); // Should be 1 byte
+        let result = table.query_records(&invalid_size_filters, None, None);
+        assert!(result.is_err());
     }
 
     #[timeout(1000)]
