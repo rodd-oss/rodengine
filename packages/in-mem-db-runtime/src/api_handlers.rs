@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use in_mem_db_core::config::DbConfig;
 use in_mem_db_core::database::Database;
 use in_mem_db_core::error::DbError;
 use in_mem_db_core::persistence;
@@ -15,15 +16,18 @@ use crate::Result;
 pub struct ApiHandlers {
     /// Database instance
     database: Arc<Database>,
+    /// Configuration
+    config: DbConfig,
     /// Procedure queue sender (for RPC calls)
     procedure_queue_sender: Option<std::sync::mpsc::Sender<crate::api_request::ProcedureCall>>,
 }
 
 impl ApiHandlers {
     /// Create new API handlers
-    pub fn new(database: Arc<Database>) -> Self {
+    pub fn new(database: Arc<Database>, config: DbConfig) -> Self {
         Self {
             database,
+            config,
             procedure_queue_sender: None,
         }
     }
@@ -47,7 +51,12 @@ impl ApiHandlers {
                 tracing::info!("Creating table {} with {} fields", name, fields.len());
                 let result = self
                     .database
-                    .create_table(name.clone(), fields, None, 1024 * 1024) // TODO: Get config
+                    .create_table(
+                        name.clone(),
+                        fields,
+                        Some(self.config.initial_table_capacity),
+                        self.config.max_buffer_size,
+                    )
                     .and_then(|()| {
                         let table = self.database.get_table(&name)?;
                         Ok(serde_json::json!({
@@ -57,9 +66,7 @@ impl ApiHandlers {
                     });
                 // Save schema after DDL
                 if result.is_ok() {
-                    // TODO: Get config
-                    if let Err(e) =
-                        persistence::save_schema_after_ddl(&self.database, &Default::default())
+                    if let Err(e) = persistence::save_schema_after_ddl(&self.database, &self.config)
                     {
                         tracing::error!("Failed to save schema: {}", e);
                     }
@@ -74,9 +81,7 @@ impl ApiHandlers {
                     .delete_table(&name)
                     .map(|()| serde_json::Value::Null);
                 if result.is_ok() {
-                    // TODO: Get config
-                    if let Err(e) =
-                        persistence::save_schema_after_ddl(&self.database, &Default::default())
+                    if let Err(e) = persistence::save_schema_after_ddl(&self.database, &self.config)
                     {
                         tracing::error!("Failed to save schema: {}", e);
                     }
@@ -105,9 +110,7 @@ impl ApiHandlers {
                         }))
                     });
                 if result.is_ok() {
-                    // TODO: Get config
-                    if let Err(e) =
-                        persistence::save_schema_after_ddl(&self.database, &Default::default())
+                    if let Err(e) = persistence::save_schema_after_ddl(&self.database, &self.config)
                     {
                         tracing::error!("Failed to save schema: {}", e);
                     }
@@ -129,9 +132,7 @@ impl ApiHandlers {
                         Ok(serde_json::Value::Null)
                     });
                 if result.is_ok() {
-                    // TODO: Get config
-                    if let Err(e) =
-                        persistence::save_schema_after_ddl(&self.database, &Default::default())
+                    if let Err(e) = persistence::save_schema_after_ddl(&self.database, &self.config)
                     {
                         tracing::error!("Failed to save schema: {}", e);
                     }
@@ -156,9 +157,7 @@ impl ApiHandlers {
                 let result =
                     self.handle_create_relation(&from_table, &from_field, &to_table, &to_field);
                 if result.is_ok() {
-                    // TODO: Get config
-                    if let Err(e) =
-                        persistence::save_schema_after_ddl(&self.database, &Default::default())
+                    if let Err(e) = persistence::save_schema_after_ddl(&self.database, &self.config)
                     {
                         tracing::error!("Failed to save schema: {}", e);
                     }
@@ -170,9 +169,7 @@ impl ApiHandlers {
                 tracing::info!("Deleting relation {}", id);
                 let result = self.handle_delete_relation(&id);
                 if result.is_ok() {
-                    // TODO: Get config
-                    if let Err(e) =
-                        persistence::save_schema_after_ddl(&self.database, &Default::default())
+                    if let Err(e) = persistence::save_schema_after_ddl(&self.database, &self.config)
                     {
                         tracing::error!("Failed to save schema: {}", e);
                     }

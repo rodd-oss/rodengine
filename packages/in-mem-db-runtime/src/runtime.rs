@@ -63,7 +63,7 @@ impl Runtime {
         let tick_duration = Duration::from_secs_f64(1.0 / config.tickrate as f64);
         let queue_capacity = config.tickrate as usize * 100;
         let (procedure_tx, procedure_rx) = std::sync::mpsc::channel();
-        let mut api_handlers = ApiHandlers::new(database.clone());
+        let mut api_handlers = ApiHandlers::new(database.clone(), config.clone());
         api_handlers.set_procedure_queue_sender(procedure_tx);
 
         Self {
