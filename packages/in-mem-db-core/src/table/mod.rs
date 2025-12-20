@@ -319,7 +319,7 @@ impl Table {
             usize,
             std::sync::Arc<crate::atomic_buffer::BufferStorage>,
         ),
-        &'static str,
+        DbError,
     > {
         self.buffer.record_slice(record_index)
     }
@@ -341,7 +341,7 @@ impl Table {
     pub fn read_record(
         &self,
         record_index: usize,
-    ) -> Result<(&[u8], std::sync::Arc<crate::atomic_buffer::BufferStorage>), &'static str> {
+    ) -> Result<(&[u8], std::sync::Arc<crate::atomic_buffer::BufferStorage>), DbError> {
         let (ptr, len, arc) = self.buffer.record_slice(record_index)?;
 
         // SAFETY: The pointer is valid as long as the Arc is alive.
@@ -525,7 +525,7 @@ impl Table {
             *const T,
             std::sync::Arc<crate::atomic_buffer::BufferStorage>,
         ),
-        &'static str,
+        DbError,
     > {
         let (ptr, _, arc) = self.buffer.record_slice(record_index)?;
         Ok((ptr as *const T, arc))
@@ -557,17 +557,27 @@ impl Table {
             usize,
             std::sync::Arc<crate::atomic_buffer::BufferStorage>,
         ),
-        &'static str,
+        DbError,
     > {
-        let field = self.get_field(field_name).ok_or("field not found")?;
+        let field = self
+            .get_field(field_name)
+            .ok_or_else(|| DbError::FieldNotFound {
+                table: self.name.clone(),
+                field: field_name.to_string(),
+            })?;
 
         let record_offset = self.record_offset(record_index);
-        let field_offset = record_offset
-            .checked_add(field.offset)
-            .ok_or("field offset overflow")?;
+        let field_offset =
+            record_offset
+                .checked_add(field.offset)
+                .ok_or(DbError::CapacityOverflow {
+                    operation: "field offset calculation",
+                })?;
         let field_end = field_offset
             .checked_add(field.size)
-            .ok_or("field end overflow")?;
+            .ok_or(DbError::CapacityOverflow {
+                operation: "field end calculation",
+            })?;
 
         self.buffer.slice(field_offset..field_end)
     }
@@ -597,19 +607,25 @@ impl Table {
             *const T,
             std::sync::Arc<crate::atomic_buffer::BufferStorage>,
         ),
-        &'static str,
+        DbError,
     > {
         let (ptr, size, arc) = self.read_field_raw(record_index, field_name)?;
 
         // Verify size matches expected type size
         if size != std::mem::size_of::<T>() {
-            return Err("field size does not match type size");
+            return Err(DbError::TypeMismatch {
+                expected: format!("{} bytes", std::mem::size_of::<T>()),
+                got: format!("{} bytes", size),
+            });
         }
 
         // Verify alignment
         let alignment = std::mem::align_of::<T>();
         if !(ptr as usize).is_multiple_of(alignment) {
-            return Err("field is not properly aligned for type");
+            return Err(DbError::TypeMismatch {
+                expected: format!("{} byte alignment", alignment),
+                got: format!("{} address", ptr as usize),
+            });
         }
 
         Ok((ptr as *const T, arc))

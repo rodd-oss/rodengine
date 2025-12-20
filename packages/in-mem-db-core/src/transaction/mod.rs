@@ -260,12 +260,10 @@ impl Transaction {
             ));
         }
 
-        if !self.staging.contains_key(&table.name) {
-            let staging_buffer = StagingBuffer::new(table);
-            self.staging.insert(table.name.clone(), staging_buffer);
-        }
-
-        Ok(self.staging.get_mut(&table.name).unwrap())
+        Ok(self
+            .staging
+            .entry(table.name.clone())
+            .or_insert_with(|| StagingBuffer::new(table)))
     }
 
     /// Stages a record update in the transaction.
@@ -343,7 +341,12 @@ impl Transaction {
 
         // Apply changes in sorted order
         for table_name in &table_names {
-            let staging_buffer = self.staging.get(table_name).unwrap();
+            let staging_buffer = self.staging.get(table_name).ok_or_else(|| {
+                DbError::DataCorruption(format!(
+                    "Staging buffer for table '{}' not found during commit",
+                    table_name
+                ))
+            })?;
             let table = tables
                 .get(table_name)
                 .ok_or_else(|| DbError::TableNotFound {

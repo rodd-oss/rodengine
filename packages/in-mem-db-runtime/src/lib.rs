@@ -273,25 +273,31 @@ impl Runtime {
         let mut processed = 0;
 
         // Process DDL requests first
-        while processed < max_requests && !self.ddl_queue.is_empty() {
+        while processed < max_requests {
             if tick_start.elapsed() > time_budget {
                 break;
             }
-            let req = self.ddl_queue.pop_front().unwrap();
-            self.handle_api_request(req)?;
-            processed += 1;
-            self.queue_size.fetch_sub(1, Ordering::Relaxed);
+            if let Some(req) = self.ddl_queue.pop_front() {
+                self.handle_api_request(req)?;
+                processed += 1;
+                self.queue_size.fetch_sub(1, Ordering::Relaxed);
+            } else {
+                break;
+            }
         }
 
         // Then DML requests
-        while processed < max_requests && !self.dml_queue.is_empty() {
+        while processed < max_requests {
             if tick_start.elapsed() > time_budget {
                 break;
             }
-            let req = self.dml_queue.pop_front().unwrap();
-            self.handle_api_request(req)?;
-            processed += 1;
-            self.queue_size.fetch_sub(1, Ordering::Relaxed);
+            if let Some(req) = self.dml_queue.pop_front() {
+                self.handle_api_request(req)?;
+                processed += 1;
+                self.queue_size.fetch_sub(1, Ordering::Relaxed);
+            } else {
+                break;
+            }
         }
 
         self.api_requests_processed_this_tick
@@ -844,45 +850,84 @@ impl Runtime {
         match field_type {
             "u8" => Ok(serde_json::Value::Number((bytes[0] as u64).into())),
             "u16" => {
-                let val = u16::from_le_bytes(bytes.try_into().unwrap());
+                let val =
+                    u16::from_le_bytes(bytes.try_into().map_err(|_| DbError::TypeMismatch {
+                        expected: "u16 (2 bytes)".to_string(),
+                        got: format!("{} bytes", bytes.len()),
+                    })?);
                 Ok(serde_json::Value::Number(val.into()))
             }
             "u32" => {
-                let val = u32::from_le_bytes(bytes.try_into().unwrap());
+                let val =
+                    u32::from_le_bytes(bytes.try_into().map_err(|_| DbError::TypeMismatch {
+                        expected: "u32 (4 bytes)".to_string(),
+                        got: format!("{} bytes", bytes.len()),
+                    })?);
                 Ok(serde_json::Value::Number(val.into()))
             }
             "u64" => {
-                let val = u64::from_le_bytes(bytes.try_into().unwrap());
+                let val =
+                    u64::from_le_bytes(bytes.try_into().map_err(|_| DbError::TypeMismatch {
+                        expected: "u64 (8 bytes)".to_string(),
+                        got: format!("{} bytes", bytes.len()),
+                    })?);
                 Ok(serde_json::Value::Number(val.into()))
             }
             "i8" => Ok(serde_json::Value::Number((bytes[0] as i8 as i64).into())),
             "i16" => {
-                let val = i16::from_le_bytes(bytes.try_into().unwrap());
+                let val =
+                    i16::from_le_bytes(bytes.try_into().map_err(|_| DbError::TypeMismatch {
+                        expected: "i16 (2 bytes)".to_string(),
+                        got: format!("{} bytes", bytes.len()),
+                    })?);
                 Ok(serde_json::Value::Number(val.into()))
             }
             "i32" => {
-                let val = i32::from_le_bytes(bytes.try_into().unwrap());
+                let val =
+                    i32::from_le_bytes(bytes.try_into().map_err(|_| DbError::TypeMismatch {
+                        expected: "i32 (4 bytes)".to_string(),
+                        got: format!("{} bytes", bytes.len()),
+                    })?);
                 Ok(serde_json::Value::Number(val.into()))
             }
             "i64" => {
-                let val = i64::from_le_bytes(bytes.try_into().unwrap());
+                let val =
+                    i64::from_le_bytes(bytes.try_into().map_err(|_| DbError::TypeMismatch {
+                        expected: "i64 (8 bytes)".to_string(),
+                        got: format!("{} bytes", bytes.len()),
+                    })?);
                 Ok(serde_json::Value::Number(val.into()))
             }
             "f32" => {
-                let val = f32::from_le_bytes(bytes.try_into().unwrap());
-                Ok(serde_json::Value::Number(
-                    serde_json::Number::from_f64(val as f64).unwrap(),
-                ))
+                let val =
+                    f32::from_le_bytes(bytes.try_into().map_err(|_| DbError::TypeMismatch {
+                        expected: "f32 (4 bytes)".to_string(),
+                        got: format!("{} bytes", bytes.len()),
+                    })?);
+                match serde_json::Number::from_f64(val as f64) {
+                    Some(num) => Ok(serde_json::Value::Number(num)),
+                    None => Ok(serde_json::Value::Null), // Handle NaN/infinity as null
+                }
             }
             "f64" => {
-                let val = f64::from_le_bytes(bytes.try_into().unwrap());
-                Ok(serde_json::Value::Number(
-                    serde_json::Number::from_f64(val).unwrap(),
-                ))
+                let val =
+                    f64::from_le_bytes(bytes.try_into().map_err(|_| DbError::TypeMismatch {
+                        expected: "f64 (8 bytes)".to_string(),
+                        got: format!("{} bytes", bytes.len()),
+                    })?);
+                match serde_json::Number::from_f64(val) {
+                    Some(num) => Ok(serde_json::Value::Number(num)),
+                    None => Ok(serde_json::Value::Null), // Handle NaN/infinity as null
+                }
             }
             "bool" => Ok(serde_json::Value::Bool(bytes[0] != 0)),
             "string" => {
-                let len = u32::from_le_bytes(bytes[0..4].try_into().unwrap()) as usize;
+                let len = u32::from_le_bytes(bytes[0..4].try_into().map_err(|_| {
+                    DbError::TypeMismatch {
+                        expected: "string length (4 bytes)".to_string(),
+                        got: format!("{} bytes", bytes.len()),
+                    }
+                })?) as usize;
                 let str_bytes = &bytes[4..4 + len];
                 Ok(serde_json::Value::String(
                     String::from_utf8_lossy(str_bytes).to_string(),

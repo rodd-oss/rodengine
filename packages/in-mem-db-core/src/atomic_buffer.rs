@@ -403,10 +403,14 @@ impl AtomicBuffer {
     pub fn slice(
         &self,
         range: std::ops::Range<usize>,
-    ) -> Result<(*const u8, usize, Arc<BufferStorage>), &'static str> {
+    ) -> Result<(*const u8, usize, Arc<BufferStorage>), DbError> {
         let arc = self.load();
         if range.start > range.end || range.end > arc.len() {
-            return Err("range out of bounds");
+            return Err(DbError::InvalidOffset {
+                table: String::new(),
+                offset: range.start,
+                max: arc.len(),
+            });
         }
         let ptr = unsafe { arc.as_ptr().add(range.start) };
         let len = range.end - range.start;
@@ -431,7 +435,7 @@ impl AtomicBuffer {
     pub fn record_slice(
         &self,
         record_index: usize,
-    ) -> Result<(*const u8, usize, Arc<BufferStorage>), &'static str> {
+    ) -> Result<(*const u8, usize, Arc<BufferStorage>), DbError> {
         let offset = self.record_offset(record_index);
         let end_offset = offset + self.record_size;
         self.slice(offset..end_offset)

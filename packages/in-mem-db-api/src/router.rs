@@ -35,31 +35,39 @@ impl Router {
         let mut router = MatchitRouter::new();
 
         // Table DDL endpoints
-        router.insert("/tables", RouteHandler::Table).unwrap();
-        router.insert("/tables/:name", RouteHandler::Table).unwrap();
+        router
+            .insert("/tables", RouteHandler::Table)
+            .expect("Failed to insert /tables route");
+        router
+            .insert("/tables/:name", RouteHandler::Table)
+            .expect("Failed to insert /tables/:name route");
         router
             .insert("/tables/:name/fields", RouteHandler::Field)
-            .unwrap();
+            .expect("Failed to insert /tables/:name/fields route");
         router
             .insert("/tables/:name/fields/:field", RouteHandler::Field)
-            .unwrap();
+            .expect("Failed to insert /tables/:name/fields/:field route");
 
         // Record CRUD endpoints
         router
             .insert("/tables/:name/records", RouteHandler::Record)
-            .unwrap();
+            .expect("Failed to insert /tables/:name/records route");
         router
             .insert("/tables/:name/records/:id", RouteHandler::Record)
-            .unwrap();
+            .expect("Failed to insert /tables/:name/records/:id route");
 
         // Relation endpoints
-        router.insert("/relations", RouteHandler::Relation).unwrap();
+        router
+            .insert("/relations", RouteHandler::Relation)
+            .expect("Failed to insert /relations route");
         router
             .insert("/relations/:id", RouteHandler::Relation)
-            .unwrap();
+            .expect("Failed to insert /relations/:id route");
 
         // RPC endpoint
-        router.insert("/rpc/:name", RouteHandler::Rpc).unwrap();
+        router
+            .insert("/rpc/:name", RouteHandler::Rpc)
+            .expect("Failed to insert /rpc/:name route");
 
         Self {
             inner: router,
@@ -96,12 +104,16 @@ impl Router {
                     "Not Found".to_string(),
                     Some(format!("No route found for {}", path)),
                 );
-                let body = serde_json::to_vec(&error_response).unwrap();
+                let body = serde_json::to_vec(&error_response).map_err(|e| {
+                    RouterError::InternalError(format!("Failed to serialize error response: {}", e))
+                })?;
                 Ok(Response::builder()
                     .status(404)
                     .header("Content-Type", "application/json")
                     .body(Bytes::from(body))
-                    .unwrap())
+                    .map_err(|e| {
+                        RouterError::InternalError(format!("Failed to build response: {}", e))
+                    })?)
             }
         }
     }
@@ -193,6 +205,7 @@ pub enum RouterError {
     InternalError(String),
     Timeout,
     BadRequest(String),
+    NotFound(String),
 }
 
 impl std::fmt::Display for RouterError {
@@ -202,6 +215,7 @@ impl std::fmt::Display for RouterError {
             RouterError::InternalError(msg) => write!(f, "Internal Error: {}", msg),
             RouterError::Timeout => write!(f, "Request Timeout"),
             RouterError::BadRequest(msg) => write!(f, "Bad Request: {}", msg),
+            RouterError::NotFound(msg) => write!(f, "Not Found: {}", msg),
         }
     }
 }
@@ -215,15 +229,25 @@ impl From<RouterError> for Response<Bytes> {
             RouterError::InternalError(msg) => (500, msg.as_str()),
             RouterError::Timeout => (408, "Request Timeout"),
             RouterError::BadRequest(msg) => (400, msg.as_str()),
+            RouterError::NotFound(msg) => (404, msg.as_str()),
         };
 
         let error_response = crate::handlers::error_response(status, message.to_string(), None);
-        let body = serde_json::to_vec(&error_response).unwrap();
+        // Note: We use expect here because if we can't serialize an error response,
+        // we're in a truly unrecoverable state. This is a fallback for when error
+        // handling itself fails.
+        let body = serde_json::to_vec(&error_response)
+            .unwrap_or_else(|e| format!("{{\"success\":false,\"error\":{{\"code\":\"500\",\"message\":\"Failed to serialize error: {}\",\"details\":null}}}}", e).into_bytes());
 
         Response::builder()
             .status(status)
             .header("Content-Type", "application/json")
             .body(Bytes::from(body))
-            .unwrap()
+            .unwrap_or_else(|_| {
+                Response::builder()
+                    .status(500)
+                    .body(Bytes::from("Internal Server Error"))
+                    .expect("Failed to build fallback error response")
+            })
     }
 }

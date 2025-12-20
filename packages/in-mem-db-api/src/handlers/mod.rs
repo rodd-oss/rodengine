@@ -64,6 +64,23 @@ pub fn error_response(code: u16, message: String, details: Option<String>) -> Er
     }
 }
 
+/// Helper to build HTTP response with proper error handling
+fn build_response(status: u16, json: Vec<u8>) -> Result<Response<Bytes>, RouterError> {
+    Response::builder()
+        .status(status)
+        .header("Content-Type", "application/json")
+        .body(Bytes::from(json))
+        .map_err(|e| RouterError::InternalError(format!("Failed to build response: {}", e)))
+}
+
+/// Helper to build empty HTTP response (for 204 No Content)
+fn build_empty_response(status: u16) -> Result<Response<Bytes>, RouterError> {
+    Response::builder()
+        .status(status)
+        .body(Bytes::new())
+        .map_err(|e| RouterError::InternalError(format!("Failed to build response: {}", e)))
+}
+
 /// Helper function to read request body with timeout
 async fn read_request_body_with_timeout(
     req: Request<hyper::body::Incoming>,
@@ -94,7 +111,10 @@ fn map_db_error_to_router_error(e: in_mem_db_core::error::DbError) -> RouterErro
     match e {
         in_mem_db_core::error::DbError::TableNotFound { .. }
         | in_mem_db_core::error::DbError::FieldNotFound { .. }
-        | in_mem_db_core::error::DbError::FieldAlreadyExists { .. }
+        | in_mem_db_core::error::DbError::RecordNotFound { .. } => {
+            RouterError::NotFound(e.to_string())
+        }
+        in_mem_db_core::error::DbError::FieldAlreadyExists { .. }
         | in_mem_db_core::error::DbError::FieldExceedsRecordSize { .. }
         | in_mem_db_core::error::DbError::CapacityOverflow { .. }
         | in_mem_db_core::error::DbError::TypeMismatch { .. }
@@ -292,11 +312,7 @@ pub async fn create_table(
     let json = serde_json::to_vec(&api_response)
         .map_err(|e| RouterError::InternalError(format!("Failed to serialize response: {}", e)))?;
 
-    Ok(Response::builder()
-        .status(201)
-        .header("Content-Type", "application/json")
-        .body(Bytes::from(json))
-        .unwrap())
+    build_response(201, json)
 }
 
 /// Deletes a table.
@@ -338,7 +354,7 @@ pub async fn delete_table(
 
     result.map_err(|e| RouterError::InternalError(format!("Runtime error: {}", e)))?;
 
-    Ok(Response::builder().status(204).body(Bytes::new()).unwrap())
+    build_empty_response(204)
 }
 
 /// Adds a field to an existing table.
@@ -438,11 +454,7 @@ pub async fn add_field(
     let json = serde_json::to_vec(&api_response)
         .map_err(|e| RouterError::InternalError(format!("Failed to serialize response: {}", e)))?;
 
-    Ok(Response::builder()
-        .status(200)
-        .header("Content-Type", "application/json")
-        .body(Bytes::from(json))
-        .unwrap())
+    build_response(200, json)
 }
 
 /// Removes a field from a table.
@@ -490,7 +502,7 @@ pub async fn remove_field(
 
     result.map_err(|e| RouterError::InternalError(format!("Runtime error: {}", e)))?;
 
-    Ok(Response::builder().status(204).body(Bytes::new()).unwrap())
+    build_empty_response(204)
 }
 
 /// Creates a new record in a table.
@@ -570,11 +582,7 @@ pub async fn create_record(
     let json = serde_json::to_vec(&api_response)
         .map_err(|e| RouterError::InternalError(format!("Failed to serialize response: {}", e)))?;
 
-    Ok(Response::builder()
-        .status(201)
-        .header("Content-Type", "application/json")
-        .body(Bytes::from(json))
-        .unwrap())
+    build_response(201, json)
 }
 
 /// Reads a record from a table.
@@ -636,11 +644,7 @@ pub async fn read_record(
     let json = serde_json::to_vec(&api_response)
         .map_err(|e| RouterError::InternalError(format!("Failed to serialize response: {}", e)))?;
 
-    Ok(Response::builder()
-        .status(200)
-        .header("Content-Type", "application/json")
-        .body(Bytes::from(json))
-        .unwrap())
+    build_response(200, json)
 }
 
 /// Fully updates a record.
@@ -711,7 +715,7 @@ pub async fn update_record(
 
     result.map_err(|e| RouterError::InternalError(format!("Runtime error: {}", e)))?;
 
-    Ok(Response::builder().status(204).body(Bytes::new()).unwrap())
+    build_empty_response(204)
 }
 
 /// Partially updates a record.
@@ -835,7 +839,7 @@ pub async fn partial_update_record(
 
     result.map_err(|e| RouterError::InternalError(format!("Runtime error: {}", e)))?;
 
-    Ok(Response::builder().status(204).body(Bytes::new()).unwrap())
+    build_empty_response(204)
 }
 
 /// Deletes a record.
@@ -888,7 +892,7 @@ pub async fn delete_record(
 
     result.map_err(|e| RouterError::InternalError(format!("Runtime error: {}", e)))?;
 
-    Ok(Response::builder().status(204).body(Bytes::new()).unwrap())
+    build_empty_response(204)
 }
 
 /// Creates a relation between tables.
@@ -971,11 +975,7 @@ pub async fn create_relation(
     let json = serde_json::to_vec(&api_response)
         .map_err(|e| RouterError::InternalError(format!("Failed to serialize response: {}", e)))?;
 
-    Ok(Response::builder()
-        .status(201)
-        .header("Content-Type", "application/json")
-        .body(Bytes::from(json))
-        .unwrap())
+    build_response(201, json)
 }
 
 /// Deletes a relation.
@@ -1021,7 +1021,7 @@ pub async fn delete_relation(
 
     result.map_err(|e| RouterError::InternalError(format!("Runtime error: {}", e)))?;
 
-    Ok(Response::builder().status(204).body(Bytes::new()).unwrap())
+    build_empty_response(204)
 }
 
 /// Executes a registered procedure via RPC.
@@ -1102,11 +1102,7 @@ pub async fn rpc(
     let json = serde_json::to_vec(&api_response)
         .map_err(|e| RouterError::InternalError(format!("Failed to serialize response: {}", e)))?;
 
-    Ok(Response::builder()
-        .status(200)
-        .header("Content-Type", "application/json")
-        .body(Bytes::from(json))
-        .unwrap())
+    build_response(200, json)
 }
 
 /// Lists all tables in the database.
@@ -1153,11 +1149,7 @@ pub async fn list_tables(
     let json = serde_json::to_vec(&api_response)
         .map_err(|e| RouterError::InternalError(format!("Failed to serialize response: {}", e)))?;
 
-    Ok(Response::builder()
-        .status(200)
-        .header("Content-Type", "application/json")
-        .body(Bytes::from(json))
-        .unwrap())
+    build_response(200, json)
 }
 
 /// Query records with filtering and pagination.
@@ -1248,11 +1240,7 @@ pub async fn query_records(
     let json = serde_json::to_vec(&api_response)
         .map_err(|e| RouterError::InternalError(format!("Failed to serialize response: {}", e)))?;
 
-    Ok(Response::builder()
-        .status(200)
-        .header("Content-Type", "application/json")
-        .body(Bytes::from(json))
-        .unwrap())
+    build_response(200, json)
 }
 
 /// Parse query parameters from URL query string.
@@ -1377,6 +1365,10 @@ mod tests {
                 table: "test".to_string(),
                 field: "id".to_string(),
             },
+            DbError::RecordNotFound {
+                table: "test".to_string(),
+                index: 0,
+            },
             DbError::FieldAlreadyExists {
                 table: "test".to_string(),
                 field: "id".to_string(),
@@ -1398,13 +1390,29 @@ mod tests {
             let router_error = map_db_error_to_router_error(error.clone());
             match router_error {
                 RouterError::BadRequest(_) => {
-                    // Expected
+                    // Expected for non-404 errors
                     assert!(
                         error.to_string().contains("test") || error.to_string().contains("u64")
                     );
+                    // Make sure it's not a TableNotFound or FieldNotFound
+                    match error {
+                        DbError::TableNotFound { .. } | DbError::FieldNotFound { .. } => {
+                            panic!("Expected NotFound for {:?}, got BadRequest", error)
+                        }
+                        _ => {} // OK
+                    }
+                }
+                RouterError::NotFound(_) => {
+                    // Expected for TableNotFound, FieldNotFound, and RecordNotFound
+                    match error {
+                        DbError::TableNotFound { .. }
+                        | DbError::FieldNotFound { .. }
+                        | DbError::RecordNotFound { .. } => {} // OK
+                        _ => panic!("Expected BadRequest for {:?}, got NotFound", error),
+                    }
                 }
                 _ => panic!(
-                    "Expected BadRequest for {:?}, got {:?}",
+                    "Expected BadRequest or NotFound for {:?}, got {:?}",
                     error, router_error
                 ),
             }

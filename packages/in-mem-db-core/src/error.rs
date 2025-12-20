@@ -62,6 +62,10 @@ pub enum DbError {
     #[error("Table '{0}' already exists")]
     TableAlreadyExists(String),
 
+    /// Record not found
+    #[error("Record not found at index {index} in table '{table}'")]
+    RecordNotFound { table: String, index: usize },
+
     /// Operation timeout
     #[error("Operation timeout")]
     Timeout,

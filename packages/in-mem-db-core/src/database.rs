@@ -188,7 +188,9 @@ impl<'a> std::ops::Deref for TableRef<'a> {
     fn deref(&self) -> &Self::Target {
         // SAFETY: The table exists because we just looked it up and the lock guard ensures
         // the HashMap is not mutated. The key is the same as used in lookup.
-        self.inner.get(&self.key).unwrap()
+        self.inner
+            .get(&self.key)
+            .expect("Table should exist in HashMap")
     }
 }
 
@@ -204,7 +206,9 @@ impl<'a> std::ops::Deref for TableRefMut<'a> {
     fn deref(&self) -> &Self::Target {
         // SAFETY: The table exists because we just looked it up and the lock guard ensures
         // the HashMap is not mutated. The key is the same as used in lookup.
-        self.inner.get(&self.key).unwrap()
+        self.inner
+            .get(&self.key)
+            .expect("Table should exist in HashMap")
     }
 }
 
@@ -212,7 +216,9 @@ impl<'a> std::ops::DerefMut for TableRefMut<'a> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         // SAFETY: The table exists because we just looked it up and the lock guard ensures
         // the HashMap is not mutated. The key is the same as used in lookup.
-        self.inner.get_mut(&self.key).unwrap()
+        self.inner
+            .get_mut(&self.key)
+            .expect("Table should exist in HashMap")
     }
 }
 
