@@ -475,7 +475,9 @@ impl Runtime {
 
         // Look up procedure in registry
         let Some(proc_fn) = registry.get(&call.name) else {
-            let error = DbError::ProcedurePanic(format!("Procedure not found: {}", call.name));
+            let error = DbError::ProcedureNotFound {
+                name: call.name.clone(),
+            };
             tracing::error!("{}", error);
             // Send error response if channel exists
             if let Some(response) = call.response {

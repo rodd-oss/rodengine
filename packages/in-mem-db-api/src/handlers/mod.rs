@@ -111,7 +111,8 @@ fn map_db_error_to_router_error(e: in_mem_db_core::error::DbError) -> RouterErro
     match e {
         in_mem_db_core::error::DbError::TableNotFound { .. }
         | in_mem_db_core::error::DbError::FieldNotFound { .. }
-        | in_mem_db_core::error::DbError::RecordNotFound { .. } => {
+        | in_mem_db_core::error::DbError::RecordNotFound { .. }
+        | in_mem_db_core::error::DbError::ProcedureNotFound { .. } => {
             RouterError::NotFound(e.to_string())
         }
         in_mem_db_core::error::DbError::FieldAlreadyExists { .. }
@@ -1369,6 +1370,9 @@ mod tests {
                 table: "test".to_string(),
                 index: 0,
             },
+            DbError::ProcedureNotFound {
+                name: "test".to_string(),
+            },
             DbError::FieldAlreadyExists {
                 table: "test".to_string(),
                 field: "id".to_string(),
@@ -1403,11 +1407,12 @@ mod tests {
                     }
                 }
                 RouterError::NotFound(_) => {
-                    // Expected for TableNotFound, FieldNotFound, and RecordNotFound
+                    // Expected for TableNotFound, FieldNotFound, RecordNotFound, and ProcedureNotFound
                     match error {
                         DbError::TableNotFound { .. }
                         | DbError::FieldNotFound { .. }
-                        | DbError::RecordNotFound { .. } => {} // OK
+                        | DbError::RecordNotFound { .. }
+                        | DbError::ProcedureNotFound { .. } => {} // OK
                         _ => panic!("Expected BadRequest for {:?}, got NotFound", error),
                     }
                 }

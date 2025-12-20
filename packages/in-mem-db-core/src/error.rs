@@ -50,6 +50,10 @@ pub enum DbError {
     #[error("Serialization error: {0}")]
     SerializationError(String),
 
+    /// Procedure not found
+    #[error("Procedure '{name}' not found")]
+    ProcedureNotFound { name: String },
+
     /// Procedure panic
     #[error("Procedure panic: {0}")]
     ProcedurePanic(String),

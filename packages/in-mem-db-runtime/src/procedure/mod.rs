@@ -187,10 +187,15 @@ impl ProcedureRegistry {
     /// # Returns
     /// `Result<(), DbError>` indicating success or validation failure.
     pub fn validate_params(&self, name: &str, params: &Value) -> Result<(), DbError> {
-        if let Some(def) = self.procedures.read().get(name) {
-            if let Some(schema) = &def.schema {
-                schema.validate(params)?;
-            }
+        let procedures = self.procedures.read();
+        let def = procedures
+            .get(name)
+            .ok_or_else(|| DbError::ProcedureNotFound {
+                name: name.to_string(),
+            })?;
+
+        if let Some(schema) = &def.schema {
+            schema.validate(params)?;
         }
         Ok(())
     }
