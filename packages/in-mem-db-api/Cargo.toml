@@ -24,5 +24,6 @@ hyper-util = { workspace = true, features = ["server", "http1", "http2"] }
 http-body-util = { workspace = true }
 matchit = { workspace = true }
 tokio = { workspace = true }
+percent-encoding = { workspace = true }
 
 [dev-dependencies]

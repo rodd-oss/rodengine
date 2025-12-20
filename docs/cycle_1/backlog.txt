@@ -298,15 +298,15 @@ feature_performance_regression_end
 phase_integration_end
 phase_robustness_hardening_start
 feature_api_completeness_start
-[] task_ap_1: Add GET /tables endpoint to list all tables
-[] task_ap_2: Add GET /tables/{name}/records endpoint with query parameters
-[] task_ap_3: Implement proper HTTP status codes (400 for client errors, 201 for creation)
-[] task_ap_4: Add missing API documentation for all endpoints
-[] task_ap_5: Ensure consistent response formats across all endpoints
+[x] task_ap_1: Add GET /tables endpoint to list all tables
+[x] task_ap_2: Add GET /tables/{name}/records endpoint with query parameters
+[x] task_ap_3: Implement proper HTTP status codes (400 for client errors, 201 for creation)
+[x] task_ap_4: Add missing API documentation for all endpoints
+[x] task_ap_5: Ensure consistent response formats across all endpoints
 feature_api_completeness_end
 feature_error_handling_refinement_start
 [] task_er_1: Replace unwrap() calls with proper error propagation in API handlers
-[] task_er_2: Implement RouterError::BadRequest variant for client errors
+[x] task_er_2: Implement RouterError::BadRequest variant for client errors
 [] task_er_3: Use RouterError::into() in handle_request for proper status codes
 [] task_er_4: Replace unwrap() in runtime byte conversions with try_into()
 [] task_er_5: Add validation for non-existent procedures in validate_params()

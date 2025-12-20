@@ -4,7 +4,6 @@ use std::sync::Arc;
 
 use hyper::{body::Bytes, Request, Response};
 use matchit::Router as MatchitRouter;
-use serde_json::json;
 
 use crate::handlers;
 use in_mem_db_core::{config::DbConfig, database::Database};
@@ -36,6 +35,7 @@ impl Router {
         let mut router = MatchitRouter::new();
 
         // Table DDL endpoints
+        router.insert("/tables", RouteHandler::Table).unwrap();
         router.insert("/tables/:name", RouteHandler::Table).unwrap();
         router
             .insert("/tables/:name/fields", RouteHandler::Field)
@@ -91,14 +91,16 @@ impl Router {
             }
             Err(_) => {
                 // Return 404 for unmatched routes
-                let body = json!({
-                    "error": "Not Found",
-                    "message": format!("No route found for {}", path)
-                });
+                let error_response = crate::handlers::error_response(
+                    404,
+                    "Not Found".to_string(),
+                    Some(format!("No route found for {}", path)),
+                );
+                let body = serde_json::to_vec(&error_response).unwrap();
                 Ok(Response::builder()
                     .status(404)
                     .header("Content-Type", "application/json")
-                    .body(Bytes::from(serde_json::to_vec(&body).unwrap()))
+                    .body(Bytes::from(body))
                     .unwrap())
             }
         }
@@ -124,10 +126,13 @@ impl RouteHandler {
     ) -> Result<Response<Bytes>, RouterError> {
         match self {
             RouteHandler::Table => {
-                if req.method() == hyper::Method::POST {
+                let has_name_param = params.get("name").is_some();
+                if req.method() == hyper::Method::POST && has_name_param {
                     handlers::create_table(req, params, state).await
-                } else if req.method() == hyper::Method::DELETE {
+                } else if req.method() == hyper::Method::DELETE && has_name_param {
                     handlers::delete_table(req, params, state).await
+                } else if req.method() == hyper::Method::GET && !has_name_param {
+                    handlers::list_tables(req, params, state).await
                 } else {
                     Err(RouterError::MethodNotAllowed)
                 }
@@ -148,6 +153,8 @@ impl RouteHandler {
                     handlers::create_record(req, params, state).await
                 } else if req.method() == hyper::Method::GET && has_id_param {
                     handlers::read_record(req, params, state).await
+                } else if req.method() == hyper::Method::GET && !has_id_param {
+                    handlers::query_records(req, params, state).await
                 } else if req.method() == hyper::Method::PUT && has_id_param {
                     handlers::update_record(req, params, state).await
                 } else if req.method() == hyper::Method::PATCH && has_id_param {
@@ -185,6 +192,7 @@ pub enum RouterError {
     MethodNotAllowed,
     InternalError(String),
     Timeout,
+    BadRequest(String),
 }
 
 impl std::fmt::Display for RouterError {
@@ -193,6 +201,7 @@ impl std::fmt::Display for RouterError {
             RouterError::MethodNotAllowed => write!(f, "Method Not Allowed"),
             RouterError::InternalError(msg) => write!(f, "Internal Error: {}", msg),
             RouterError::Timeout => write!(f, "Request Timeout"),
+            RouterError::BadRequest(msg) => write!(f, "Bad Request: {}", msg),
         }
     }
 }
@@ -205,17 +214,16 @@ impl From<RouterError> for Response<Bytes> {
             RouterError::MethodNotAllowed => (405, "Method Not Allowed"),
             RouterError::InternalError(msg) => (500, msg.as_str()),
             RouterError::Timeout => (408, "Request Timeout"),
+            RouterError::BadRequest(msg) => (400, msg.as_str()),
         };
 
-        let body = json!({
-            "error": status.to_string(),
-            "message": message
-        });
+        let error_response = crate::handlers::error_response(status, message.to_string(), None);
+        let body = serde_json::to_vec(&error_response).unwrap();
 
         Response::builder()
             .status(status)
             .header("Content-Type", "application/json")
-            .body(Bytes::from(serde_json::to_vec(&body).unwrap()))
+            .body(Bytes::from(body))
             .unwrap()
     }
 }

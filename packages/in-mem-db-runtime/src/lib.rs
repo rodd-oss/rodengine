@@ -73,6 +73,14 @@ pub enum ApiRequest {
         params: serde_json::Value,
         response: ResponseSender,
     },
+    /// List all tables
+    ListTables { response: ResponseSender },
+    /// Query records with filtering and pagination
+    QueryRecords {
+        table: String,
+        query: QueryParams,
+        response: ResponseSender,
+    },
 }
 
 impl ApiRequest {
@@ -87,8 +95,21 @@ impl ApiRequest {
             ApiRequest::DeleteRelation { .. } => true,
             ApiRequest::Crud { .. } => false,
             ApiRequest::Rpc { .. } => false,
+            ApiRequest::ListTables { .. } => false,
+            ApiRequest::QueryRecords { .. } => false,
         }
     }
+}
+
+/// Query parameters for filtering and pagination
+#[derive(Debug, Clone)]
+pub struct QueryParams {
+    /// Maximum number of records to return
+    pub limit: Option<usize>,
+    /// Number of records to skip
+    pub offset: Option<usize>,
+    /// Field equality filters (field_name -> value)
+    pub filters: std::collections::HashMap<String, serde_json::Value>,
 }
 
 /// CRUD operation types
@@ -106,6 +127,9 @@ pub enum CrudOperation {
     },
     Delete {
         id: u64,
+    },
+    Query {
+        query: QueryParams,
     },
 }
 
@@ -664,7 +688,14 @@ impl Runtime {
                         self.handle_update_record(&table, id, values)
                     }
                     CrudOperation::Delete { id } => self.handle_delete_record(&table, id),
+                    CrudOperation::Query { query } => self.handle_query_records(&table, query),
                 };
+                let _ = response.send(result);
+                Ok(())
+            }
+            ApiRequest::ListTables { response } => {
+                tracing::debug!("Listing all tables");
+                let result = self.handle_list_tables();
                 let _ = response.send(result);
                 Ok(())
             }
@@ -686,6 +717,16 @@ impl Runtime {
                 };
 
                 self.procedure_queue.push_back(call);
+                Ok(())
+            }
+            ApiRequest::QueryRecords {
+                table,
+                query,
+                response,
+            } => {
+                tracing::debug!("Query records from table {}: {:?}", table, query);
+                let result = self.handle_query_records(&table, query);
+                let _ = response.send(result);
                 Ok(())
             }
         }
@@ -780,8 +821,8 @@ impl Runtime {
                 let len = bytes.len() as u32;
                 let mut result = len.to_le_bytes().to_vec();
                 result.extend_from_slice(bytes);
-                // Pad to 256 bytes (string field size)
-                result.resize(256, 0);
+                // Pad to 260 bytes (4-byte length + 256 bytes string data)
+                result.resize(260, 0);
                 Ok(result)
             }
             _ => {
@@ -1023,6 +1064,74 @@ impl Runtime {
         }
 
         Ok(serde_json::Value::Null)
+    }
+
+    /// Handle list tables operation
+    fn handle_list_tables(&self) -> Result<serde_json::Value> {
+        let table_names = self.database.table_names();
+        let count = table_names.len();
+        Ok(serde_json::json!({
+            "tables": table_names,
+            "count": count,
+        }))
+    }
+
+    /// Handle query records operation
+    fn handle_query_records(&self, table: &str, query: QueryParams) -> Result<serde_json::Value> {
+        let table_ref = self.database.get_table(table)?;
+
+        // Convert JSON filters to byte filters
+        let mut byte_filters = std::collections::HashMap::new();
+        for (field_name, filter_value) in &query.filters {
+            if let Some(field) = table_ref.get_field(field_name) {
+                let bytes = self.json_value_to_bytes(filter_value, &field.type_id)?;
+                byte_filters.insert(field_name.clone(), bytes);
+            } else {
+                return Err(DbError::FieldNotFound {
+                    table: table.to_string(),
+                    field: field_name.clone(),
+                });
+            }
+        }
+
+        // Use efficient query method
+        let matching_indices = table_ref.query_records(&byte_filters, query.limit, query.offset)?;
+
+        // Convert matching records to JSON
+        let mut matching_records = Vec::new();
+        for record_index in matching_indices {
+            // Read the full record
+            let (record_bytes, _arc) = table_ref
+                .read_record(record_index)
+                .map_err(|e| DbError::SerializationError(e.to_string()))?;
+
+            // Convert record to JSON representation
+            let mut record_obj = serde_json::Map::new();
+            for field in &table_ref.fields {
+                let offset = field.offset;
+                let field_bytes = &record_bytes[offset..offset + field.size];
+                let value = self.bytes_to_json_value(field_bytes, &field.type_id)?;
+                record_obj.insert(field.name.clone(), value);
+            }
+
+            // Add record ID (index + 1)
+            record_obj.insert(
+                "_id".to_string(),
+                serde_json::Value::Number((record_index as u64 + 1).into()),
+            );
+
+            matching_records.push(serde_json::Value::Object(record_obj));
+        }
+
+        let total_records = table_ref.record_count();
+
+        Ok(serde_json::json!({
+            "records": matching_records,
+            "count": matching_records.len(),
+            "total": total_records,
+            "limit": query.limit,
+            "offset": query.offset,
+        }))
     }
 
     /// Run a procedure

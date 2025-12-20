@@ -27,6 +27,7 @@ clap = { version = "4.0", features = ["derive"] }
 criterion = "0.7"
 tempfile = "3.10"
 crc32fast = "1.4"
+percent-encoding = "2.3"
 
 [workspace.package]
 version = "0.1.0"
