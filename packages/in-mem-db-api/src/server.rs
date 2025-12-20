@@ -70,17 +70,8 @@ async fn handle_request(
         Ok(response) => Ok(response.map(Full::new)),
         Err(err) => {
             eprintln!("Error handling request: {}", err);
-            // If we can't build an error response, we're in a truly unrecoverable state
-            let response = Response::builder()
-                .status(500)
-                .body(Full::new(Bytes::from("Internal Server Error")))
-                .unwrap_or_else(|_| {
-                    Response::builder()
-                        .status(500)
-                        .body(Full::new(Bytes::from("Internal Server Error")))
-                        .expect("Failed to build fallback error response")
-                });
-            Ok(response)
+            let response: Response<Bytes> = err.into();
+            Ok(response.map(Full::new))
         }
     }
 }
