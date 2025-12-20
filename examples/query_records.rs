@@ -5,8 +5,9 @@ use in_mem_db_core::database::Database;
 use in_mem_db_core::table::Field;
 use in_mem_db_core::types::{TypeLayout, TypeRegistry};
 use in_mem_db_runtime::{ApiRequest, QueryParams, Runtime};
-use std::sync::{mpsc, Arc};
+use std::sync::Arc;
 use std::thread;
+use tokio::sync::mpsc;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create database
@@ -131,20 +132,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
     
     // Create table via API
-    let (response_tx, response_rx) = std::sync::mpsc::sync_channel(1);
+    let (response_tx, response_rx) = tokio::sync::mpsc::channel(1);
     let create_table_request = ApiRequest::CreateTable {
         name: "users".to_string(),
         fields,
         response: response_tx,
     };
     
-    api_tx.send(create_table_request).unwrap();
-    let table_response = response_rx.recv().unwrap().unwrap();
+    api_tx.blocking_send(create_table_request).unwrap();
+    let table_response = response_rx.blocking_recv().unwrap().unwrap();
     println!("Created table: {:?}", table_response);
     
     // Create some records
     for i in 0..10 {
-        let (response_tx, response_rx) = std::sync::mpsc::sync_channel(1);
+    let (response_tx, response_rx) = tokio::sync::mpsc::channel(1);
         let values = vec![
             serde_json::Value::Number((i as u64 + 1).into()),
             serde_json::Value::String(format!("User{}", i + 1)),
@@ -157,14 +158,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             response: response_tx,
         };
         
-        api_tx.send(create_record_request).unwrap();
-        let record_response = response_rx.recv().unwrap().unwrap();
+        api_tx.blocking_send(create_record_request).unwrap();
+        let record_response = response_rx.blocking_recv().unwrap().unwrap();
         println!("Created record {}: {:?}", i + 1, record_response);
     }
     
     // Query records with limit
     println!("\n--- Query with limit=3 ---");
-    let (response_tx, response_rx) = std::sync::mpsc::sync_channel(1);
+    let (response_tx, response_rx) = tokio::sync::mpsc::channel(1);
     let query_params = QueryParams {
         limit: Some(3),
         offset: None,
@@ -177,13 +178,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         response: response_tx,
     };
     
-    api_tx.send(query_request).unwrap();
-    let query_response = response_rx.recv().unwrap().unwrap();
+    api_tx.blocking_send(query_request).unwrap();
+    let query_response = response_rx.blocking_recv().unwrap().unwrap();
     println!("Query response: {}", serde_json::to_string_pretty(&query_response).unwrap());
     
     // Query records with offset
     println!("\n--- Query with offset=5 ---");
-    let (response_tx, response_rx) = std::sync::mpsc::sync_channel(1);
+    let (response_tx, response_rx) = tokio::sync::mpsc::channel(1);
     let query_params = QueryParams {
         limit: None,
         offset: Some(5),
@@ -196,13 +197,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         response: response_tx,
     };
     
-    api_tx.send(query_request).unwrap();
-    let query_response = response_rx.recv().unwrap().unwrap();
+    api_tx.blocking_send(query_request).unwrap();
+    let query_response = response_rx.blocking_recv().unwrap().unwrap();
     println!("Query response: {}", serde_json::to_string_pretty(&query_response).unwrap());
     
     // Query records with filter (active=true)
     println!("\n--- Query with filter active=true ---");
-    let (response_tx, response_rx) = std::sync::mpsc::sync_channel(1);
+    let (response_tx, response_rx) = tokio::sync::mpsc::channel(1);
     let mut filters = std::collections::HashMap::new();
     filters.insert("active".to_string(), serde_json::Value::Bool(true));
     
@@ -218,13 +219,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         response: response_tx,
     };
     
-    api_tx.send(query_request).unwrap();
-    let query_response = response_rx.recv().unwrap().unwrap();
+    api_tx.blocking_send(query_request).unwrap();
+    let query_response = response_rx.blocking_recv().unwrap().unwrap();
     println!("Query response: {}", serde_json::to_string_pretty(&query_response).unwrap());
     
     // Query records with filter (name contains "User1")
     println!("\n--- Query with filter name=User1 ---");
-    let (response_tx, response_rx) = std::sync::mpsc::sync_channel(1);
+    let (response_tx, response_rx) = tokio::sync::mpsc::channel(1);
     let mut filters = std::collections::HashMap::new();
     filters.insert("name".to_string(), serde_json::Value::String("User1".to_string()));
     
@@ -240,8 +241,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         response: response_tx,
     };
     
-    api_tx.send(query_request).unwrap();
-    let query_response = response_rx.recv().unwrap().unwrap();
+    api_tx.blocking_send(query_request).unwrap();
+    let query_response = response_rx.blocking_recv().unwrap().unwrap();
     println!("Query response: {}", serde_json::to_string_pretty(&query_response).unwrap());
     
     // Clean up

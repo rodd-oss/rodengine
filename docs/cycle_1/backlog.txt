@@ -310,7 +310,7 @@ feature_error_handling_refinement_start
 [x] task_er_3: Use RouterError::into() in handle_request for proper status codes
 [x] task_er_4: Replace unwrap() in runtime byte conversions with try_into()
 [x] task_er_5: Add validation for non-existent procedures in validate_params()
-[] task_er_6: Replace spawn_blocking with async channels (tokio::sync::mpsc) for API requests
+[x] task_er_6: Replace spawn_blocking with async channels (tokio::sync::mpsc) for API requests
 feature_error_handling_refinement_end
 feature_api_testing_start
 [] task_at_1: Add unit tests for all API handlers

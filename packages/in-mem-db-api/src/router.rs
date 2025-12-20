@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use hyper::{body::Bytes, Request, Response};
 use matchit::Router as MatchitRouter;
+use tokio::sync::mpsc;
 
 use crate::handlers;
 use in_mem_db_core::{config::DbConfig, database::Database};
@@ -16,7 +17,7 @@ pub struct AppState {
     /// Database configuration
     pub config: Arc<DbConfig>,
     /// API request sender to runtime
-    pub api_tx: std::sync::mpsc::SyncSender<in_mem_db_runtime::ApiRequest>,
+    pub api_tx: mpsc::Sender<in_mem_db_runtime::ApiRequest>,
 }
 
 /// HTTP request router.
@@ -30,7 +31,7 @@ impl Router {
     pub fn new(
         db: Arc<Database>,
         config: Arc<DbConfig>,
-        api_tx: std::sync::mpsc::SyncSender<in_mem_db_runtime::ApiRequest>,
+        api_tx: mpsc::Sender<in_mem_db_runtime::ApiRequest>,
     ) -> Self {
         let mut router = MatchitRouter::new();
 

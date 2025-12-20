@@ -5,8 +5,9 @@
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::sync::{mpsc, Arc};
+use std::sync::Arc;
 use std::thread;
+use tokio::sync::mpsc;
 
 use clap::Parser;
 use in_mem_db_api::{router::Router, server::Server};
@@ -96,8 +97,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db = Arc::new(db);
 
     // Create channels for runtime communication
-    let (api_tx, api_rx) = mpsc::sync_channel(1000);
-    let (persistence_tx, persistence_rx) = mpsc::sync_channel(1000);
+    let (api_tx, api_rx) = mpsc::channel(1000);
+    let (persistence_tx, mut persistence_rx) = mpsc::channel(1000);
 
     // Spawn persistence thread
     let persistence_config = config.clone();

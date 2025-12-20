@@ -288,11 +288,12 @@ pub async fn create_table(
         fields,
         response: tx,
     };
-    // Send via blocking task since api_tx is std::sync::mpsc
-    let send_result = tokio::task::spawn_blocking(move || state.api_tx.send(api_request))
+    // Send request via async channel
+    state
+        .api_tx
+        .send(api_request)
         .await
-        .map_err(|e| RouterError::InternalError(format!("Failed to send request: {}", e)))?;
-    send_result.map_err(|e| RouterError::InternalError(format!("Channel closed: {}", e)))?;
+        .map_err(|e| RouterError::InternalError(format!("Channel closed: {}", e)))?;
 
     // Wait for response
     let result = wait_for_response_with_timeout(rx, state.config.response_timeout_ms).await?;
@@ -345,10 +346,11 @@ pub async fn delete_table(
         name: table_name.clone(),
         response: tx,
     };
-    let send_result = tokio::task::spawn_blocking(move || state.api_tx.send(api_request))
+    state
+        .api_tx
+        .send(api_request)
         .await
-        .map_err(|e| RouterError::InternalError(format!("Failed to send request: {}", e)))?;
-    send_result.map_err(|e| RouterError::InternalError(format!("Channel closed: {}", e)))?;
+        .map_err(|e| RouterError::InternalError(format!("Channel closed: {}", e)))?;
 
     // Wait for response
     let result = wait_for_response_with_timeout(rx, state.config.response_timeout_ms).await?;
@@ -428,10 +430,11 @@ pub async fn add_field(
         field,
         response: tx,
     };
-    let send_result = tokio::task::spawn_blocking(move || state.api_tx.send(api_request))
+    state
+        .api_tx
+        .send(api_request)
         .await
-        .map_err(|e| RouterError::InternalError(format!("Failed to send request: {}", e)))?;
-    send_result.map_err(|e| RouterError::InternalError(format!("Channel closed: {}", e)))?;
+        .map_err(|e| RouterError::InternalError(format!("Channel closed: {}", e)))?;
 
     // Wait for response
     let result = wait_for_response_with_timeout(rx, state.config.response_timeout_ms).await?;
@@ -493,10 +496,11 @@ pub async fn remove_field(
         field_name: field_name.clone(),
         response: tx,
     };
-    let send_result = tokio::task::spawn_blocking(move || state.api_tx.send(api_request))
+    state
+        .api_tx
+        .send(api_request)
         .await
-        .map_err(|e| RouterError::InternalError(format!("Failed to send request: {}", e)))?;
-    send_result.map_err(|e| RouterError::InternalError(format!("Channel closed: {}", e)))?;
+        .map_err(|e| RouterError::InternalError(format!("Channel closed: {}", e)))?;
 
     // Wait for response
     let result = wait_for_response_with_timeout(rx, state.config.response_timeout_ms).await?;
@@ -562,10 +566,11 @@ pub async fn create_record(
         },
         response: tx,
     };
-    let send_result = tokio::task::spawn_blocking(move || state.api_tx.send(api_request))
+    state
+        .api_tx
+        .send(api_request)
         .await
-        .map_err(|e| RouterError::InternalError(format!("Failed to send request: {}", e)))?;
-    send_result.map_err(|e| RouterError::InternalError(format!("Channel closed: {}", e)))?;
+        .map_err(|e| RouterError::InternalError(format!("Channel closed: {}", e)))?;
 
     // Wait for response
     let result = wait_for_response_with_timeout(rx, state.config.response_timeout_ms).await?;
@@ -630,10 +635,11 @@ pub async fn read_record(
         operation: CrudOperation::Read { id: record_id },
         response: tx,
     };
-    let send_result = tokio::task::spawn_blocking(move || state.api_tx.send(api_request))
+    state
+        .api_tx
+        .send(api_request)
         .await
-        .map_err(|e| RouterError::InternalError(format!("Failed to send request: {}", e)))?;
-    send_result.map_err(|e| RouterError::InternalError(format!("Channel closed: {}", e)))?;
+        .map_err(|e| RouterError::InternalError(format!("Channel closed: {}", e)))?;
 
     // Wait for response
     let result = wait_for_response_with_timeout(rx, state.config.response_timeout_ms).await?;
@@ -706,10 +712,11 @@ pub async fn update_record(
         },
         response: tx,
     };
-    let send_result = tokio::task::spawn_blocking(move || state.api_tx.send(api_request))
+    state
+        .api_tx
+        .send(api_request)
         .await
-        .map_err(|e| RouterError::InternalError(format!("Failed to send request: {}", e)))?;
-    send_result.map_err(|e| RouterError::InternalError(format!("Channel closed: {}", e)))?;
+        .map_err(|e| RouterError::InternalError(format!("Channel closed: {}", e)))?;
 
     // Wait for response
     let result = wait_for_response_with_timeout(rx, state.config.response_timeout_ms).await?;
@@ -782,11 +789,11 @@ pub async fn partial_update_record(
         operation: CrudOperation::Read { id: record_id },
         response: read_tx,
     };
-    let api_tx_clone = state.api_tx.clone();
-    let send_result = tokio::task::spawn_blocking(move || api_tx_clone.send(read_request))
+    state
+        .api_tx
+        .send(read_request)
         .await
-        .map_err(|e| RouterError::InternalError(format!("Failed to send read request: {}", e)))?;
-    send_result.map_err(|e| RouterError::InternalError(format!("Channel closed: {}", e)))?;
+        .map_err(|e| RouterError::InternalError(format!("Channel closed: {}", e)))?;
 
     let current_record = read_rx
         .await
@@ -828,10 +835,11 @@ pub async fn partial_update_record(
         },
         response: update_tx,
     };
-    let send_result = tokio::task::spawn_blocking(move || state.api_tx.send(update_request))
+    state
+        .api_tx
+        .send(update_request)
         .await
         .map_err(|e| RouterError::InternalError(format!("Failed to send update request: {}", e)))?;
-    send_result.map_err(|e| RouterError::InternalError(format!("Channel closed: {}", e)))?;
 
     // Wait for response
     let result = update_rx
@@ -883,10 +891,11 @@ pub async fn delete_record(
         operation: CrudOperation::Delete { id: record_id },
         response: tx,
     };
-    let send_result = tokio::task::spawn_blocking(move || state.api_tx.send(api_request))
+    state
+        .api_tx
+        .send(api_request)
         .await
-        .map_err(|e| RouterError::InternalError(format!("Failed to send request: {}", e)))?;
-    send_result.map_err(|e| RouterError::InternalError(format!("Channel closed: {}", e)))?;
+        .map_err(|e| RouterError::InternalError(format!("Channel closed: {}", e)))?;
 
     // Wait for response
     let result = wait_for_response_with_timeout(rx, state.config.response_timeout_ms).await?;
@@ -953,10 +962,11 @@ pub async fn create_relation(
         to_field: request.to_field.clone(),
         response: tx,
     };
-    let send_result = tokio::task::spawn_blocking(move || state.api_tx.send(api_request))
+    state
+        .api_tx
+        .send(api_request)
         .await
-        .map_err(|e| RouterError::InternalError(format!("Failed to send request: {}", e)))?;
-    send_result.map_err(|e| RouterError::InternalError(format!("Channel closed: {}", e)))?;
+        .map_err(|e| RouterError::InternalError(format!("Channel closed: {}", e)))?;
 
     // Wait for response
     let result = wait_for_response_with_timeout(rx, state.config.response_timeout_ms).await?;
@@ -1012,10 +1022,11 @@ pub async fn delete_relation(
         id: relation_id.clone(),
         response: tx,
     };
-    let send_result = tokio::task::spawn_blocking(move || state.api_tx.send(api_request))
+    state
+        .api_tx
+        .send(api_request)
         .await
-        .map_err(|e| RouterError::InternalError(format!("Failed to send request: {}", e)))?;
-    send_result.map_err(|e| RouterError::InternalError(format!("Channel closed: {}", e)))?;
+        .map_err(|e| RouterError::InternalError(format!("Channel closed: {}", e)))?;
 
     // Wait for response
     let result = wait_for_response_with_timeout(rx, state.config.response_timeout_ms).await?;
@@ -1089,10 +1100,11 @@ pub async fn rpc(
         params: params_json,
         response: tx,
     };
-    let send_result = tokio::task::spawn_blocking(move || state.api_tx.send(api_request))
+    state
+        .api_tx
+        .send(api_request)
         .await
-        .map_err(|e| RouterError::InternalError(format!("Failed to send request: {}", e)))?;
-    send_result.map_err(|e| RouterError::InternalError(format!("Channel closed: {}", e)))?;
+        .map_err(|e| RouterError::InternalError(format!("Channel closed: {}", e)))?;
 
     // Wait for response
     let result = wait_for_response_with_timeout(rx, state.config.response_timeout_ms).await?;
@@ -1136,10 +1148,11 @@ pub async fn list_tables(
     // Send request to runtime
     let (tx, rx) = oneshot::channel();
     let api_request = ApiRequest::ListTables { response: tx };
-    let send_result = tokio::task::spawn_blocking(move || state.api_tx.send(api_request))
+    state
+        .api_tx
+        .send(api_request)
         .await
-        .map_err(|e| RouterError::InternalError(format!("Failed to send request: {}", e)))?;
-    send_result.map_err(|e| RouterError::InternalError(format!("Channel closed: {}", e)))?;
+        .map_err(|e| RouterError::InternalError(format!("Channel closed: {}", e)))?;
 
     // Wait for response
     let result = wait_for_response_with_timeout(rx, state.config.response_timeout_ms).await?;
@@ -1227,10 +1240,11 @@ pub async fn query_records(
         query: query_params,
         response: tx,
     };
-    let send_result = tokio::task::spawn_blocking(move || state.api_tx.send(api_request))
+    state
+        .api_tx
+        .send(api_request)
         .await
-        .map_err(|e| RouterError::InternalError(format!("Failed to send request: {}", e)))?;
-    send_result.map_err(|e| RouterError::InternalError(format!("Channel closed: {}", e)))?;
+        .map_err(|e| RouterError::InternalError(format!("Channel closed: {}", e)))?;
 
     // Wait for response
     let result = wait_for_response_with_timeout(rx, state.config.response_timeout_ms).await?;

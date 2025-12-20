@@ -3,8 +3,9 @@
 use std::collections::VecDeque;
 use std::panic::AssertUnwindSafe;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
-use std::sync::{mpsc, Arc};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tokio::sync::mpsc;
 
 use in_mem_db_core::config::DbConfig;
 use in_mem_db_core::database::Database;
@@ -175,7 +176,7 @@ pub struct Runtime {
     procedure_queue: VecDeque<ProcedureCall>,
     /// Persistence channel sender (kept for potential emergency flushes or future use)
     #[allow(dead_code)]
-    persistence_tx: mpsc::SyncSender<FlushCommand>,
+    persistence_tx: mpsc::Sender<FlushCommand>,
     /// Procedure registry
     procedure_registry: ProcedureRegistry,
     /// API requests processed in current tick
@@ -205,7 +206,7 @@ impl Runtime {
         database: Arc<Database>,
         config: DbConfig,
         api_rx: mpsc::Receiver<ApiRequest>,
-        persistence_tx: mpsc::SyncSender<FlushCommand>,
+        persistence_tx: mpsc::Sender<FlushCommand>,
     ) -> Self {
         let tick_duration = Duration::from_secs_f64(1.0 / config.tickrate as f64);
         let queue_capacity = config.tickrate as usize * 100;

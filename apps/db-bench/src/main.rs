@@ -362,9 +362,8 @@ fn run_procedure_scaling_test(record_count: usize, cores_str: &str) {
     use in_mem_db_core::error::DbError;
     use in_mem_db_core::transaction::TransactionHandle;
     use in_mem_db_runtime::Runtime;
-    use std::sync::mpsc;
     use std::time::{Duration, Instant};
-    use tokio::sync::oneshot;
+    use tokio::sync::{mpsc, oneshot};
 
     println!("Running procedure scaling test...");
     println!("Record count: {}, Core counts: {}", record_count, cores_str);
@@ -592,8 +591,8 @@ fn run_procedure_scaling_test(record_count: usize, cores_str: &str) {
             }
 
             let db_arc = std::sync::Arc::new(db);
-            let (api_tx, api_rx) = mpsc::channel();
-            let (persistence_tx, _persistence_rx) = mpsc::sync_channel(100);
+            let (api_tx, api_rx) = mpsc::channel(1000);
+            let (persistence_tx, _persistence_rx) = mpsc::channel(100);
 
             let config = DbConfig {
                 tickrate: 1000,
@@ -621,7 +620,9 @@ fn run_procedure_scaling_test(record_count: usize, cores_str: &str) {
                     params: serde_json::json!({}),
                     response: result_tx,
                 };
-                api_tx.send(request).expect("Failed to send API request");
+                api_tx
+                    .blocking_send(request)
+                    .expect("Failed to send API request");
                 result_channels.push(result_rx);
             }
 

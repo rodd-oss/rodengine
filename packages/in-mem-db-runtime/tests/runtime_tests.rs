@@ -2,11 +2,10 @@
 //!
 //! Tests for runtime loop, tick phases, rate limiting, and procedure execution.
 
-use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use tokio::sync::oneshot;
+use tokio::sync::{mpsc, oneshot};
 
 use in_mem_db_core::config::DbConfig;
 use in_mem_db_core::database::Database;
@@ -34,8 +33,8 @@ fn test_runtime_basic_lifecycle() {
     };
 
     // Create channels
-    let (api_tx, api_rx) = mpsc::sync_channel(1000);
-    let (persistence_tx, _persistence_rx) = mpsc::sync_channel(1000);
+    let (api_tx, api_rx) = mpsc::channel(1000);
+    let (persistence_tx, _persistence_rx) = mpsc::channel(1000);
 
     // Create runtime
     let mut runtime = Runtime::new(db.clone(), config, api_rx, persistence_tx);
@@ -66,7 +65,7 @@ fn test_runtime_basic_lifecycle() {
             response: response_tx,
         };
 
-        api_tx.send(req).unwrap();
+        api_tx.blocking_send(req).unwrap();
     }
 
     // Run runtime for a short time to process some requests
@@ -109,8 +108,8 @@ fn test_runtime_procedure_execution() {
     };
 
     // Create channels
-    let (api_tx, api_rx) = mpsc::sync_channel(1000);
-    let (persistence_tx, _persistence_rx) = mpsc::sync_channel(1000);
+    let (api_tx, api_rx) = mpsc::channel(1000);
+    let (persistence_tx, _persistence_rx) = mpsc::channel(1000);
 
     // Create runtime
     let mut runtime = Runtime::new(db.clone(), config, api_rx, persistence_tx);
@@ -151,7 +150,7 @@ fn test_runtime_procedure_execution() {
         response: response_tx,
     };
 
-    api_tx.send(rpc_req).unwrap();
+    api_tx.blocking_send(rpc_req).unwrap();
 
     // Run multiple ticks to ensure procedure executes
     for _ in 0..5 {
@@ -189,8 +188,8 @@ fn test_procedure_panic_recovery() {
     };
 
     // Create channels
-    let (api_tx, api_rx) = mpsc::sync_channel(1000);
-    let (persistence_tx, _persistence_rx) = mpsc::sync_channel(1000);
+    let (api_tx, api_rx) = mpsc::channel(1000);
+    let (persistence_tx, _persistence_rx) = mpsc::channel(1000);
 
     // Create runtime
     let mut runtime = Runtime::new(db.clone(), config, api_rx, persistence_tx);
@@ -257,7 +256,7 @@ fn test_procedure_panic_recovery() {
             response: response_tx,
         };
 
-        api_tx.send(rpc_req).unwrap();
+        api_tx.blocking_send(rpc_req).unwrap();
 
         // Run multiple ticks to ensure procedure executes
         for _ in 0..5 {
@@ -300,7 +299,7 @@ fn test_procedure_panic_recovery() {
             response: response_tx,
         };
 
-        api_tx.send(rpc_req).unwrap();
+        api_tx.blocking_send(rpc_req).unwrap();
 
         // Run multiple ticks to ensure procedure executes (and panics)
         for _ in 0..5 {
@@ -355,7 +354,7 @@ fn test_procedure_panic_recovery() {
             response: response_tx,
         };
 
-        api_tx.send(rpc_req).unwrap();
+        api_tx.blocking_send(rpc_req).unwrap();
 
         // Run ticks - runtime should still function
         for _ in 0..3 {
@@ -429,8 +428,8 @@ fn test_runtime_request_prioritization() {
     };
 
     // Create channels
-    let (_api_tx, api_rx) = mpsc::sync_channel(1000);
-    let (persistence_tx, _persistence_rx) = mpsc::sync_channel(1000);
+    let (_api_tx, api_rx) = mpsc::channel(1000);
+    let (persistence_tx, _persistence_rx) = mpsc::channel(1000);
 
     // Create runtime
     let _runtime = Runtime::new(db.clone(), config, api_rx, persistence_tx);
